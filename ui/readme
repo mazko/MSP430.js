@@ -1,0 +1,7 @@
+~$ pip install nodeenv
+~$ nodeenv ~/virtualenvs/ng2 --prebuilt
+~$ . ~/virtualenvs/ng2/bin/activate
+(env)~$ npm install -g @angular/cli
+(env)~$ ng new ng2
+(env)~$ ng serve
+(env)~$ ng build --prod

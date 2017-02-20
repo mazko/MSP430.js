@@ -1,0 +1,41 @@
+<!-- stackoverflow.com/q/1097006/ -->
+
+<div class="row text-center"><!--
+
+
+ --><div class="btn-group sim-cp" dropdown>
+    <label id="split-button" class="btn btn-default btn-lg" (change)="elf_changed($event)">ELF<input type="file" accept=".out,.elf" style="display: none;">
+    </label>
+    <button type="button" class="btn btn-default btn-lg dropdown-toggle-split" dropdownToggle [disabled]="isRunning">
+    <span class="caret"></span>
+    <span class="sr-only">Split button!</span>
+    </button>
+    <ul class="dropdown-menu" dropdownMenu role="menu" aria-labelledby="split-button">
+      <li *ngFor="let board of boards" role="menuitem">
+        <a class="dropdown-item" [routerLink]="['/board', board.id]">{{board.name}}</a>
+      </li>
+    </ul>
+    </div><!--
+
+
+ --><button (click)="run_clicked()" [disabled]="!hasElf" type="button" [attr.class]="'sim-cp btn btn-lg btn-' + (isRunning ? 'danger' : 'success')"><span [attr.class]="'glyphicon glyphicon-' + (isRunning ? 'stop' : 'play')"></span></button><!--
+
+
+ --><button type="button" (click)="gist_clicked()" [disabled]="!gistBtnEnabled" [class]="'sim-cp btn btn-lg btn-' + (isRunning ? (isFreezed ? 'danger' : 'success') : 'warning')"><span [class]="'glyphicon glyphicon-' + (isRunning ? (isFreezed ? 'thumbs-down' : 'thumbs-up') : 'globe')"></span></button><!--
+
+
+ -->
+</div>
+
+<div class="row text-center sim-alert">
+  <div *ngFor="let alert of alerts">
+    <alert [type]="alert.type" dismissible="true">
+      <span [ngSwitch]="alert.html">
+        <span *ngSwitchCase="true" [innerHtml]="alert.msg"></span>
+        <span *ngSwitchDefault>{{alert.msg}}</span>
+      </span>
+    </alert>
+  </div>
+</div>
+
+<router-outlet></router-outlet>

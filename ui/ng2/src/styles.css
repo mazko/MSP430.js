@@ -1,0 +1,10 @@
+/* You can add global styles to this file, and also import other style files */
+
+@import '../node_modules/bootstrap/dist/css/bootstrap.min.css';
+
+html, body {
+  /*background-color: #333;*/
+  /*background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAABZJREFUeNpi2r9//38gYGAEESAAEGAAasgJOgzOKCoAAAAASUVORK5CYII=);*/
+  background-image: url(assets/tile_electronics_seamless_pattern_with_doodles_by_kna-d60rvxc.jpg);
+  background-repeat: repeat;
+}

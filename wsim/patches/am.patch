@@ -1,0 +1,193 @@
+diff --git a/Makefile.am b/Makefile.am
+index 3907709..3027745 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -1,5 +1,5 @@
+ # order is important (platforms must be at the end)
+-SUBDIRS = arch     \
++SUBDIRS = arch libelf liblogger#     \
+ 	devices    \
+ 	libconsole \
+ 	libelf     \
+diff --git a/arch/Makefile.am b/arch/Makefile.am
+index df1ebd6..3acfc38 100644
+--- a/arch/Makefile.am
++++ b/arch/Makefile.am
+@@ -1 +1 @@
+-SUBDIRS = common msp430 atmega mcugen
++SUBDIRS = msp430# common atmega mcugen
+diff --git a/arch/msp430/Makefile.am b/arch/msp430/Makefile.am
+index f4132ef..f014573 100644
+--- a/arch/msp430/Makefile.am
++++ b/arch/msp430/Makefile.am
+@@ -1,6 +1,6 @@
+ if BUILD_MSP430
+ 
+-noinst_LIBRARIES = \
++noinst_LIBRARIES = libmsp430f1611.a#\
+ 	libmsp430f135.a		\
+ 	libmsp430f149.a		\
+ 	libmsp430f449.a		\
+diff --git a/arch/msp430/msp430.h b/arch/msp430/msp430.h
+index 156c3aa..e8d0df3 100644
+--- a/arch/msp430/msp430.h
++++ b/arch/msp430/msp430.h
+@@ -34,12 +34,14 @@
+ #include "msp430_lcd.h"
+ #include "msp430_dma.h"
+ #include "msp430_flash.h"
++#ifndef EMMBIND_EXTERN_COMPILE_PATCH
+ #include "msp430_svs.h"
+ #include "msp430_cmpa.h"
+ #include "msp430_adc.h"
+ #include "msp430_adc12.h"
+ #include "msp430_adc10.h"
+ #include "msp430_dac12.h"
++#endif // EMMBIND_EXTERN_COMPILE_PATCH
+ #include "msp430_lcdb.h"
+ #include "msp430_pmm.h"
+ #include "msp430_ucs.h"
+@@ -75,6 +77,7 @@
+ /* ************************************************** */
+ /* ************************************************** */
+ 
++#ifndef EMMBIND_EXTERN_COMPILE_PATCH
+ extern int msp430_trace_pc_switch;
+ extern int msp430_trace_sp_switch;
+ extern tracer_id_t MSP430_TRACER_ACLK;
+@@ -276,6 +279,8 @@ extern struct msp430_mcu_t mcu_backup;
+ 
+ #define MCU_INTR           msp430_interrupt
+ 
++#endif // EMMBIND_EXTERN_COMPILE_PATCH
++
+ #if defined(__msp430_have_ucs)
+   int msp430_mcu_create(int xt1, int xt2, int vlo, int refo);
+ #elif defined(__msp430_have_basic_clock_plus)
+diff --git a/arch/msp430/msp430_adc12.c b/arch/msp430/msp430_adc12.c
+index 8fb6234..5cc1cba 100644
+--- a/arch/msp430/msp430_adc12.c
++++ b/arch/msp430/msp430_adc12.c
+@@ -295,7 +295,7 @@ void msp430_adc12_update(void)
+       else
+ 	{
+ 	  ERROR("msp430:adc12: channel out of bounds\n");
+-	  machine_exit_error();
++	  // machine_exit_error();
+ 	}
+     }
+   else
+diff --git a/arch/msp430/msp430_io.c b/arch/msp430/msp430_io.c
+index 78de3d9..0c41ec7 100644
+--- a/arch/msp430/msp430_io.c
++++ b/arch/msp430/msp430_io.c
+@@ -216,7 +216,7 @@ static void msp430_set_readptr8(addr_map_read8_t f, uint16_t addr)
+   else
+     {
+       ERROR("msp430:io: MCU create error, IO read8 0x%04x function not unique\n",addr);
+-      machine_exit_error();
++      // machine_exit_error();
+     }
+ }
+ 
+@@ -242,7 +242,7 @@ static void msp430_set_readptr16(addr_map_read16_t f, uint16_t addr)
+ #if defined(ADDR_MIRROR_START)
+       ERROR("msp430:io:       %p : ram mirror\n", msp430_read16_ram_mirrored);
+ #endif
+-      machine_exit_error();
++      // machine_exit_error();
+     }
+ }
+ 
+@@ -258,7 +258,7 @@ static void msp430_set_writeptr8(addr_map_write8_t f, uint16_t addr)
+   else
+     {
+       ERROR("msp430:io: MCU create error, IO write8 0x%04x function not unique\n",addr);
+-      machine_exit_error();
++      // machine_exit_error();
+     }
+ }
+ 
+@@ -274,7 +274,7 @@ static void msp430_set_writeptr16(addr_map_write16_t f, uint16_t addr)
+   else
+     {
+       ERROR("msp430:io: MCU create error, IO write16 0x%04x function not unique\n",addr);
+-      machine_exit_error();
++      // machine_exit_error();
+     }
+ }
+ 
+diff --git a/libtracer/tracer.h b/libtracer/tracer.h
+index de5ee0b..2fa26c4 100644
+--- a/libtracer/tracer.h
++++ b/libtracer/tracer.h
+@@ -56,11 +56,13 @@ extern void  (*tracer_event_record_ptr)       (tracer_id_t id, tracer_val_t val)
+ extern void  (*tracer_event_record_force_ptr) (tracer_id_t id, tracer_val_t val);
+ extern void  (*tracer_event_record_time_ptr)  (tracer_id_t id, tracer_val_t val, tracer_time_t time);
+ 
+-#define tracer_event_record(id,val)             \
+-  do {					        \
+-    if (tracer_event_record_ptr != NULL)        \
+-      tracer_event_record_ptr(id,val);	        \
+-  } while(0)
++#define tracer_event_record(id,val)
++
++// #define tracer_event_record(id,val)             \
++//   do {					        \
++//     if (tracer_event_record_ptr != NULL)        \
++//       tracer_event_record_ptr(id,val);	        \
++//   } while(0)
+ 
+ #define tracer_event_record_force(id,val)	\
+   do {						\
+diff --git a/machine/embind.h b/machine/embind.h
+new file mode 100644
+index 0000000..ba41998
+--- /dev/null
++++ b/machine/embind.h
+@@ -0,0 +1,5 @@
++// http://stackoverflow.com/a/6772979
++typedef uint64_t wsimtime_t;
++
++extern wsimtime_t embind_nanotime;
++extern int embind_nanotime_incr;
+\ No newline at end of file
+diff --git a/machine/machine_fd.h b/machine/machine_fd.h
+index fbce192..c6f63c5 100644
+--- a/machine/machine_fd.h
++++ b/machine/machine_fd.h
+@@ -113,15 +113,27 @@ extern struct machine_t machine;
+ 
+ void     machine_exit_error  ();
+ 
+-#define MACHINE_TIME_GET_NANO()  machine.state->nanotime
+-#define MACHINE_TIME_GET_INCR()  machine.nanotime_incr
+-#define MACHINE_TIME_SET_INCR(n)				       \
+-  do {								       \
+-    machine.nanotime_incr        = n;                                  \
+-    machine.state->nanotime     += n;                                  \
++#include "embind.h"
++
++#define MACHINE_TIME_GET_NANO()  embind_nanotime
++#define MACHINE_TIME_GET_INCR()  embind_nanotime_incr
++#define MACHINE_TIME_SET_INCR(n)               \
++  do {                       \
++    embind_nanotime_incr        = n;                                  \
++    embind_nanotime     += n;                                  \
+   } while (0)
+ 
+-#define MACHINE_TIME_CLR_INCR()  do { machine.nanotime_incr = 0; } while (0)
++//#define MACHINE_TIME_CLR_INCR()  do { embind_nanotime_incr = 0; } while (0)
++
++// #define MACHINE_TIME_GET_NANO()  machine.state->nanotime
++// #define MACHINE_TIME_GET_INCR()  machine.nanotime_incr
++// #define MACHINE_TIME_SET_INCR(n)				       \
++//   do {								       \
++//     machine.nanotime_incr        = n;                                  \
++//     machine.state->nanotime     += n;                                  \
++//   } while (0)
++
++// #define MACHINE_TIME_CLR_INCR()  do { machine.nanotime_incr = 0; } while (0)
+ 
+ /* ************************************************** */
+ /* ************************************************** */
