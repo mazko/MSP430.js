@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MSP430.js - Online Microcontroller Simulator</title>
+  <base href="/">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+
+  <script>
+    // See http://www.backalleycoder.com/2016/05/13/sghpa-the-single-page-app-hack-for-github-pages/
+    (function(){
+      var redirect = sessionStorage.redirect;
+      delete sessionStorage.redirect;
+      if (redirect && redirect != location.href) {
+        history.replaceState(null, null, redirect);
+      }
+    })();
+  </script>
+
+  <!-- https://kripken.github.io/emscripten-site/docs/porting/connecting_cpp_and_javascript/embind.html#a-quick-example -->
+  <script src="assets/wsim.browser.js"></script>
+
+<link href="styles.0cec9ad7ddd4b797157d.bundle.css" rel="stylesheet"/></head>
+<body>
+  <app-root><!-- Loading... --></app-root>
+<script type="text/javascript" src="inline.fb5629546ed6748cdba0.bundle.js"></script><script type="text/javascript" src="polyfills.81ed681e29bd26c517a4.bundle.js"></script><script type="text/javascript" src="vendor.8c7c467d025a8c59359a.bundle.js"></script><script type="text/javascript" src="main.62daaeccc60acd59e001.bundle.js"></script></body>
+</html>
