@@ -7,7 +7,7 @@ void rotate(volatile unsigned char * const port) {
 
     *port = 1;
     do {
-        i = 333;                          // SW Delay
+        i = 4444;                          // SW Delay
         do i--;
         while(i != 0);
         *port <<= 1;
@@ -18,9 +18,9 @@ int main(void) {
     WDTCTL = WDTPW | WDTHOLD;               // Stop watchdog timer
 
 //BCSCTL1= 0;
-    DCOCTL = 0;//0xE0; // sets DCO to max frequency
-BCSCTL1 = 0;
-BCSCTL2 = DIVM_3;
+DCOCTL = 0;
+//BCSCTL1 = DIVM_0;
+//BCSCTL2 = 0;
 //DCOCTL = 0;
 
     //P1OUT = P2OUT = P3OUT = P4OUT = P5OUT = P6OUT = 0;

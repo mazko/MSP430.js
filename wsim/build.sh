@@ -2,8 +2,9 @@
 
 set -e
 
-# develop: ./build.sh
+# develop:    ./build.sh
 # production: ./build.sh -O3
+# profiling:  ./build.sh -O3 --profiling
 
 docker images | grep -q wsim-emsdk || {
    echo "FROM 42ua/emsdk"
@@ -11,7 +12,7 @@ docker images | grep -q wsim-emsdk || {
 } | docker build --no-cache -t wsim-emsdk -
 
 
-for alias in 'emcc' 'emconfigure' 'emmake' 'emar'; do
+for alias in 'emcc' 'emconfigure' 'emmake' 'emar' './bootstrap'; do
   # docker run -e 'EMCC_DEBUG=1' ...
   alias $alias="docker run -it --rm -m 2g -w='/home/src/wsim-src' -v `pwd`:/home/src wsim-emsdk $alias"
 done
@@ -38,11 +39,15 @@ if [ ! -d "wsim-src" ]; then
 fi
 
 
-emmake make clean
+# emmake make clean
 emmake make CFLAGS="$1 -Werror -Wno-error=shift-negative-value"
 
 # https://github.com/kripken/emscripten/blob/master/src/settings.js
-emcc $1 ../embind.cpp ../MSP430.cpp ../nop-tracer.cpp \
+# --profiling
+# https://kripken.github.io/emscripten-site/docs/optimizing/Optimizing-Code.html#profiling
+# https://nodejs.org/uk/docs/guides/simple-profiling/
+# node --prof test.node.js && node --prof-process isolate-*.log
+emcc "$@" ../embind.cpp ../MSP430.cpp ../nop-tracer.cpp \
   -Werror -Wall -s ERROR_ON_UNDEFINED_SYMBOLS=1 \
   --memory-init-file 0 --bind -o wsim-embind.js \
   -DMSP430f1611 arch/msp430/libmsp430f1611.a \

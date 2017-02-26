@@ -6,9 +6,9 @@ int main(void) {
     WDTCTL = WDTPW | WDTHOLD;               // Stop watchdog timer
 
 //BCSCTL1= 0;
-    DCOCTL = 0;//0xE0; // sets DCO to max frequency
-BCSCTL1 = 0;
-BCSCTL2 = DIVM_2;
+DCOCTL = DCO0 + DCO1;
+//BCSCTL1 = DIVA_0;
+BCSCTL2 = 0;
 //DCOCTL = 0;
     P5DIR |= 0xFF;                          // Set P1.0 to output direction
 

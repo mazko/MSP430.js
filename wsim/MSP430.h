@@ -7,6 +7,25 @@ struct MSP430Snapshot {
 };
 
 
+#define EXPAND_TO_TEN(n) \
+  s##n##0, s##n##1, s##n##2, s##n##3, s##n##4, s##n##5, s##n##6, s##n##7, s##n##8, s##n##9
+
+struct MSP430Chunk {
+  struct MSP430Snapshot EXPAND_TO_TEN(),
+                        EXPAND_TO_TEN(1), 
+                        EXPAND_TO_TEN(2),
+                        EXPAND_TO_TEN(3),
+                        EXPAND_TO_TEN(4),
+                        EXPAND_TO_TEN(5),
+                        EXPAND_TO_TEN(6),
+                        EXPAND_TO_TEN(7),
+                        EXPAND_TO_TEN(8),
+                        EXPAND_TO_TEN(9);
+};
+
+#undef EXPAND_TO_TEN
+
+
 class MSP430 {
 public:
 
@@ -14,10 +33,18 @@ public:
 
   void reset();
 
-  struct MSP430Snapshot step();
+  struct MSP430Chunk step();
 
   void end();
 
+  void print_description();
+
+  void dump_stats();
+
 private:
   struct elf32_struct_t * m_elf32;
+
+  void run_and_fill_snapshot(struct MSP430Snapshot& snapshot);
+
+  void port_read(const uint8_t port_id, uint8_t& port);
 };

@@ -4,6 +4,18 @@ import { Injectable } from '@angular/core';
 
 const EM_SIM_MODULE = window['msp430_sim_module'];
 
+/* tslint:disable:interface-over-type-literal */
+type StepSnapshot_t = {
+  readonly PORT1: number;
+  readonly PORT2: number;
+  readonly PORT3: number;
+  readonly PORT4: number;
+  readonly PORT5: number;
+  readonly PORT6: number;
+  readonly uptime_ms: number;
+  readonly signal: boolean;
+};
+/* tslint:enable:interface-over-type-literal */
 
 @Injectable()
 export class SimEmscriptenService {
@@ -36,7 +48,7 @@ export class SimEmscriptenService {
   }
 
   init(fileName: string): void {
-    const code = this.lazySim.init(fileName, 32768, 5e4, 6);
+    const code = this.lazySim.init(fileName, 32768, 25e4, 6);
     if (code) {
       throw new Error(`EmSim: bad exit code ${code} !`);
     }
@@ -46,58 +58,33 @@ export class SimEmscriptenService {
     this.lazySim.reset();
   }
 
-  step() {
-    const snapshot = this.lazySim.step();
-    if (snapshot.signal) {
-      throw new Error(`EmSim: bad signal ${snapshot.signal} !`);
+  bit_test(port: number, bit: number): boolean {
+    /* tslint:disable:no-bitwise */
+    return !!(port && ((1 << bit) & port));
+    /* tslint:enable:no-bitwise */
+  }
+
+  step(): {
+      readonly UPTIME_MS: number,
+      readonly sss: StepSnapshot_t[]} {
+
+    const ss: StepSnapshot_t[] = this.lazySim.step(),
+          ss_last = ss[ss.length - 1];
+
+    if (ss_last.signal) {
+      throw new Error(`EmSim: bad signal ${ss_last.signal} !`);
     }
 
-    return new class {
-      const PORT1: number = snapshot.PORT1;
-      const PORT2: number = snapshot.PORT2;
-      const PORT3: number = snapshot.PORT3;
-      const PORT4: number = snapshot.PORT4;
-      const PORT5: number = snapshot.PORT5;
-      const PORT6: number = snapshot.PORT6;
-
-      const UPTIME_MS = snapshot.uptime_ms;
-
-      private bit_test(port: number, bit: number): boolean {
-        /* tslint:disable:no-bitwise */
-        return !!((1 << bit) & port);
-        /* tslint:enable:no-bitwise */
-      }
-
-      get_port1_bit(bit: number): boolean {
-        return this.bit_test(this.PORT1, bit);
-      }
-
-      get_port2_bit(bit: number): boolean {
-        return this.bit_test(this.PORT2, bit);
-      }
-
-      get_port3_bit(bit: number): boolean {
-        return this.bit_test(this.PORT3, bit);
-      }
-
-      get_port4_bit(bit: number): boolean {
-        return this.bit_test(this.PORT4, bit);
-      }
-
-      get_port5_bit(bit: number): boolean {
-        return this.bit_test(this.PORT5, bit);
-      }
-
-      get_port6_bit(bit: number): boolean {
-        return this.bit_test(this.PORT6, bit);
-      }
-
+    return {
+      UPTIME_MS: ss_last.uptime_ms,
+      sss: ss
     };
   }
 
   // reset runtime to clear ports e.t.c.
   end(): void {
     this.lazySim.end();
+    this.lazySim.dump_stats();
     // TODO: possible memory leak
     this._em_sim_instance = this._em_module = null;
   }

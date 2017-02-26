@@ -65,35 +65,39 @@ export abstract class AbstractBoard implements OnDestroy {
   protected abstract _do_apply_steps(): void;
 
   private _do_sim(): void {
-    let realtime_last_sys = Date.now(), health_cache = null;
+    let date_last = Date.now(), health_cache = null;
 
     const next = (): void => {
+
       if (this._simSatate === SimStateEnum.STOPPING) {
         this._simSatate = SimStateEnum.READY;
         this._state.isRunning = false;
         this._sim.end();
       } else {
-        let prec_delta = null;
-        for (let watchdog = 0; watchdog < 1000; watchdog++) {
-          prec_delta = this._do_step() - (Date.now() - realtime_last_sys);
-          if (prec_delta > 50 /* WSIM_REALTIME_PRECISION_SECONDS 0.05 */) {
-            break;
+
+        const date_delta = Date.now() - date_last;
+        let sim_delta = this._do_step() - date_delta, watchdog = 1;
+
+        if (sim_delta < -1000 /* 1 sec late, bad :( */) {
+          console.log('WSIM: dt [' + sim_delta + '] is unadjustable, reset timer');
+          date_last -= sim_delta;
+        } else {
+          while (++watchdog < 42) {
+            sim_delta = this._do_step() - date_delta;
+            if (sim_delta > 100 /* 100ms ahead, good :) */) {
+              break;
+            }
           }
         }
 
         this._do_apply_steps();
 
-        if (health_cache !== (prec_delta > 0)) {
-          health_cache = (prec_delta > 0);
+        if (health_cache !== (sim_delta > 0)) {
+          health_cache = (sim_delta > 0);
           this._controller.healthChanged(health_cache);
         }
 
-        if (prec_delta < -1000) {
-          console.log('WSIM: dt [' + prec_delta + '] is unadjustable, reset timer');
-          realtime_last_sys -= prec_delta;
-        }
-
-        setTimeout(next, Math.max(0, prec_delta));
+        setTimeout(next, Math.max(0, sim_delta));
       }
     };
     // start

@@ -7,27 +7,6 @@ import { ui_catcher } from '../decorators';
 const DEFAULT_RGB = '#000';
 
 
-class RGBCache {
-  private v = 0;
-  private total = 0;
-
-  update(v: boolean): void {
-    if (v) {
-      this.v++;
-    }
-    this.total++;
-  }
-
-  reset(): void {
-    this.v = this.total = 0;
-  }
-
-  get n(): number {
-    return Math.ceil(this.v * 0xFF / this.total);
-  }
-}
-
-
 @Component({
   selector: 'app-board1',
   templateUrl: './board1.component.html',
@@ -55,22 +34,33 @@ export class Board1Component extends AbstractBoard implements OnInit {
 
   private readonly _rgb_cache = new class {
 
-    readonly R1 = this.create();
-    readonly G1 = this.create();
-    readonly B1 = this.create();
+    readonly R1 = Array<number>(8).fill(0);
+    readonly G1 = [...this.R1];
+    readonly B1 = [...this.R1];
 
-    readonly R2 = this.create();
-    readonly G2 = this.create();
-    readonly B2 = this.create();
+    readonly R2 = [...this.R1];
+    readonly G2 = [...this.R1];
+    readonly B2 = [...this.R1];
 
-    private create(): RGBCache[] {
-      return Array.apply(null, Array(8)).map( () => new RGBCache() );
-    }
+    n = 0;
 
     reset() {
+      this.n = 0;
       for (const c of [this.R1, this.G1, this.B1, this.R2, this.G2, this.B2]) {
         for (let i = 0; i < c.length; i++) {
-          c[i].reset();
+          c[i] = 0;
+        }
+      }
+    }
+
+    normalize(): void {
+      for (const c of [this.R1, this.G1, this.B1, this.R2, this.G2, this.B2]) {
+        for (let i = 0; i < c.length; i++) {
+          c[i] = Math.ceil(c[i] * 0xFF / this.n);
+          if (c[i] > 0xFF) {
+            console.log(`ERROR: wrong math ${c[i]} !`);
+            c[i] = 0xFF;
+          }
         }
       }
     }
@@ -99,44 +89,49 @@ export class Board1Component extends AbstractBoard implements OnInit {
 
   @ui_catcher
   _do_step(): number {
-    const snapshot = this._sim.step(),
+    const sim = this._sim, chunk = sim.step(),
           cache = this._rgb_cache;
 
-    for (let i = 0; i < cache.R1.length; i++) {
-      cache.R1[i].update(snapshot.get_port1_bit(i));
-      cache.R2[i].update(snapshot.get_port2_bit(i));
-      cache.G1[i].update(snapshot.get_port3_bit(i));
-      cache.G2[i].update(snapshot.get_port4_bit(i));
-      cache.B1[i].update(snapshot.get_port5_bit(i));
-      cache.B2[i].update(snapshot.get_port6_bit(i));
+    for (const {PORT1, PORT2, PORT3, PORT4, PORT5, PORT6} of chunk.sss) {
+      cache.n++;
+      for (let i = 0; i < cache.R1.length; i++) {
+        if (sim.bit_test(PORT1, i)) { cache.R1[i]++; }
+        if (sim.bit_test(PORT2, i)) { cache.R2[i]++; }
+        if (sim.bit_test(PORT3, i)) { cache.G1[i]++; }
+        if (sim.bit_test(PORT4, i)) { cache.G2[i]++; }
+        if (sim.bit_test(PORT5, i)) { cache.B1[i]++; }
+        if (sim.bit_test(PORT6, i)) { cache.B2[i]++; }
+      }
     }
 
-    return snapshot.UPTIME_MS;
+    return chunk.UPTIME_MS;
   }
 
   @ui_catcher
   _do_apply_steps(): void {
     const cache = this._rgb_cache;
 
-    this.RGB_1 = `rgb(${cache.R1[0].n},${cache.G1[0].n},${cache.B1[0].n})`;
-    this.RGB_2 = `rgb(${cache.R1[1].n},${cache.G1[1].n},${cache.B1[1].n})`;
-    this.RGB_3 = `rgb(${cache.R1[2].n},${cache.G1[2].n},${cache.B1[2].n})`;
-    this.RGB_4 = `rgb(${cache.R1[3].n},${cache.G1[3].n},${cache.B1[3].n})`;
-    this.RGB_5 = `rgb(${cache.R1[4].n},${cache.G1[4].n},${cache.B1[4].n})`;
-    this.RGB_6 = `rgb(${cache.R1[5].n},${cache.G1[5].n},${cache.B1[5].n})`;
-    this.RGB_7 = `rgb(${cache.R1[6].n},${cache.G1[6].n},${cache.B1[6].n})`;
-    this.RGB_8 = `rgb(${cache.R1[7].n},${cache.G1[7].n},${cache.B1[7].n})`;
+    cache.normalize();
 
-    this.RGB_9 = `rgb(${cache.R2[0].n},${cache.G2[0].n},${cache.B2[0].n})`;
-    this.RGB_10 = `rgb(${cache.R2[1].n},${cache.G2[1].n},${cache.B2[1].n})`;
-    this.RGB_11 = `rgb(${cache.R2[2].n},${cache.G2[2].n},${cache.B2[2].n})`;
-    this.RGB_12 = `rgb(${cache.R2[3].n},${cache.G2[3].n},${cache.B2[3].n})`;
-    this.RGB_13 = `rgb(${cache.R2[4].n},${cache.G2[4].n},${cache.B2[4].n})`;
-    this.RGB_14 = `rgb(${cache.R2[5].n},${cache.G2[5].n},${cache.B2[5].n})`;
-    this.RGB_15 = `rgb(${cache.R2[6].n},${cache.G2[6].n},${cache.B2[6].n})`;
-    this.RGB_16 = `rgb(${cache.R2[7].n},${cache.G2[7].n},${cache.B2[7].n})`;
+    this.RGB_1 = `rgb(${cache.R1[0]},${cache.G1[0]},${cache.B1[0]})`;
+    this.RGB_2 = `rgb(${cache.R1[1]},${cache.G1[1]},${cache.B1[1]})`;
+    this.RGB_3 = `rgb(${cache.R1[2]},${cache.G1[2]},${cache.B1[2]})`;
+    this.RGB_4 = `rgb(${cache.R1[3]},${cache.G1[3]},${cache.B1[3]})`;
+    this.RGB_5 = `rgb(${cache.R1[4]},${cache.G1[4]},${cache.B1[4]})`;
+    this.RGB_6 = `rgb(${cache.R1[5]},${cache.G1[5]},${cache.B1[5]})`;
+    this.RGB_7 = `rgb(${cache.R1[6]},${cache.G1[6]},${cache.B1[6]})`;
+    this.RGB_8 = `rgb(${cache.R1[7]},${cache.G1[7]},${cache.B1[7]})`;
 
-    this._rgb_cache.reset();
+    this.RGB_9 = `rgb(${cache.R2[0]},${cache.G2[0]},${cache.B2[0]})`;
+    this.RGB_10 = `rgb(${cache.R2[1]},${cache.G2[1]},${cache.B2[1]})`;
+    this.RGB_11 = `rgb(${cache.R2[2]},${cache.G2[2]},${cache.B2[2]})`;
+    this.RGB_12 = `rgb(${cache.R2[3]},${cache.G2[3]},${cache.B2[3]})`;
+    this.RGB_13 = `rgb(${cache.R2[4]},${cache.G2[4]},${cache.B2[4]})`;
+    this.RGB_14 = `rgb(${cache.R2[5]},${cache.G2[5]},${cache.B2[5]})`;
+    this.RGB_15 = `rgb(${cache.R2[6]},${cache.G2[6]},${cache.B2[6]})`;
+    this.RGB_16 = `rgb(${cache.R2[7]},${cache.G2[7]},${cache.B2[7]})`;
+
+    cache.reset();
   }
 
 }
