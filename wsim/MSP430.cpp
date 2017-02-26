@@ -27,7 +27,8 @@ int MSP430::init(const std::string s, const int xt1, const int xt2, const uint8_
   int r = msp430_mcu_create(xt1, xt2);
 
   if (r) {
-    std::cout << "EMBIND: msp430_mcu_create(): " << r << std::endl;
+    // http://floooh.github.io/2016/08/27/asmjs-diet.html
+    // std::cout << "EMBIND: msp430_mcu_create(): " << r << std::endl;
     return r;
   }
 
@@ -41,7 +42,8 @@ int MSP430::init(const std::string s, const int xt1, const int xt2, const uint8_
     MSP430::reset();
     return 0;
   } else {
-    std::cout << "EMBIND: libelf_load() error" << std::endl;
+    // http://floooh.github.io/2016/08/27/asmjs-diet.html
+    // std::cout << "EMBIND: libelf_load() error" << std::endl;
     return 42;
   }
 }
