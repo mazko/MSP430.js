@@ -19,6 +19,7 @@ export function ui_catcher(
     } catch (err) {
       const this_: AbstractBoard = this;
       this_._controller.errorOccured(err);
+      this_._controller.stopSimulation();
     }
   };
 

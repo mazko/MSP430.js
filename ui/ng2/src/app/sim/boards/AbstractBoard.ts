@@ -82,7 +82,7 @@ export abstract class AbstractBoard implements OnDestroy {
           console.log('WSIM: dt [' + sim_delta + '] is unadjustable, reset timer');
           date_last -= sim_delta;
         } else {
-          while (++watchdog < 42) {
+          while (++watchdog < 42 && this._simSatate === SimStateEnum.RUNNING) {
             sim_delta = this._do_step() - date_delta;
             if (sim_delta > 100 /* 100ms ahead, good :) */) {
               break;

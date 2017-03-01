@@ -48,7 +48,7 @@ export class SimEmscriptenService {
   }
 
   init(fileName: string): void {
-    const code = this.lazySim.init(fileName, 32768, 25e4, 6);
+    const code = this.lazySim.init(fileName, 32768, 4e5, 6);
     if (code) {
       throw new Error(`EmSim: bad exit code ${code} !`);
     }

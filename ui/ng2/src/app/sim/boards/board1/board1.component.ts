@@ -92,8 +92,9 @@ export class Board1Component extends AbstractBoard implements OnInit {
     const sim = this._sim, chunk = sim.step(),
           cache = this._rgb_cache;
 
+    cache.n += chunk.sss.length;
+
     for (const {PORT1, PORT2, PORT3, PORT4, PORT5, PORT6} of chunk.sss) {
-      cache.n++;
       for (let i = 0; i < cache.R1.length; i++) {
         if (sim.bit_test(PORT1, i)) { cache.R1[i]++; }
         if (sim.bit_test(PORT2, i)) { cache.R2[i]++; }

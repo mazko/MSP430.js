@@ -18,7 +18,7 @@ export class SimComponent {
   isFreezed = false;
 
   readonly boards: {name: string, id: number}[] = [
-    {name: '16xRGB Circle',  id: 1},
+    {name: 'MSP430F1611 & 16xRGB Circle',  id: 1},
   ];
 
   readonly alerts: {msg: string, type: BsAlertType, html?: boolean}[] = [];
