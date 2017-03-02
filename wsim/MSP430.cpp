@@ -39,7 +39,7 @@ int MSP430::init(const std::string s, const int xt1, const int xt2, const uint8_
   if (this->m_elf32) {
     embind_nanotime = 0;
     embind_nanotime_incr = 0;
-    MSP430::reset();
+    this->reset();
     return 0;
   } else {
     // http://floooh.github.io/2016/08/27/asmjs-diet.html
@@ -64,21 +64,30 @@ void MSP430::reset() {
 }
 
 
-void MSP430::port_read(const uint8_t port_id, uint8_t& port) {
-  msp430_digiIO_dev_read(port_id, &port);
-  port &= msp430_digiIO_dev_read_dir(port_id);
+void MSP430::port_read(const uint8_t port_id, uint8_t& out) {
+  msp430_digiIO_dev_read(port_id, &out);
+  out &= msp430_digiIO_dev_read_dir(port_id);
+}
+
+
+void MSP430::port_write(const uint8_t port_id, const uint8_t v) {
+  msp430_digiIO_dev_write(port_id, v, 0xFF);
 }
 
 
 void MSP430::run_and_fill_snapshot(struct MSP430Snapshot& snapshot) {
   mcu_run();         // MCU step and devices
 
-  MSP430::port_read(PORT1, snapshot.p1);
-  MSP430::port_read(PORT2, snapshot.p2);
-  MSP430::port_read(PORT3, snapshot.p3);
-  MSP430::port_read(PORT4, snapshot.p4);
-  MSP430::port_read(PORT5, snapshot.p5);
-  MSP430::port_read(PORT6, snapshot.p6);
+  this->port_read(PORT1, snapshot.p1);
+  this->port_read(PORT2, snapshot.p2);
+  this->port_read(PORT3, snapshot.p3);
+  this->port_read(PORT4, snapshot.p4);
+  this->port_read(PORT5, snapshot.p5);
+  this->port_read(PORT6, snapshot.p6);
+
+  if (this->m_p1_in_b) {
+    this->port_write(PORT1, this->m_p1_in);
+  }
 
   mcu_update_done(); // MCU step done
   embind_nanotime_incr = 0; // MACHINE_TIME_CLR_INCR();
@@ -89,19 +98,24 @@ void MSP430::run_and_fill_snapshot(struct MSP430Snapshot& snapshot) {
 
 
 #define EXPAND_TO_TEN(n) \
-  MSP430::run_and_fill_snapshot(chunk.s##n##0); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##1); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##2); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##3); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##4); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##5); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##6); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##7); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##8); \
-  MSP430::run_and_fill_snapshot(chunk.s##n##9)
+  this->run_and_fill_snapshot(chunk.s##n##0); \
+  this->run_and_fill_snapshot(chunk.s##n##1); \
+  this->run_and_fill_snapshot(chunk.s##n##2); \
+  this->run_and_fill_snapshot(chunk.s##n##3); \
+  this->run_and_fill_snapshot(chunk.s##n##4); \
+  this->run_and_fill_snapshot(chunk.s##n##5); \
+  this->run_and_fill_snapshot(chunk.s##n##6); \
+  this->run_and_fill_snapshot(chunk.s##n##7); \
+  this->run_and_fill_snapshot(chunk.s##n##8); \
+  this->run_and_fill_snapshot(chunk.s##n##9)
 
-struct MSP430Chunk MSP430::step() {
+struct MSP430Chunk MSP430::step(const int16_t p1_in) {
 
+  this->m_p1_in_b = p1_in >= 0;
+  if (this->m_p1_in_b) {
+    this->m_p1_in = p1_in & 0xFF;
+  }
+  
   struct MSP430Chunk chunk = {{0}};
 
   EXPAND_TO_TEN();

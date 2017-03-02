@@ -1,7 +1,12 @@
 ~$ pip install nodeenv
 ~$ nodeenv ~/virtualenvs/ng2 --prebuilt
 ~$ . ~/virtualenvs/ng2/bin/activate
-(env)~$ npm install -g @angular/cli
-(env)~$ ng new ng2
+(env)~$ npm install -g @angular/cli@1.0.0-rc.4
+(env)~$ ng new ng2 && cd ng2
+(env)~$ npm install ng2-bootstrap@1.4 bootstrap --save
 (env)~$ ng serve
-(env)~$ ng build --prod
+(env)~$ ng lint && ng build --prod
+
+# node --stack-size=100000 `which ng` build --prod
+# bash -c 'cd dist && busybox httpd -v -f -p 8000'
+# python3 -m http.server

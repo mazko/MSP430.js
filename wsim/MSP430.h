@@ -33,7 +33,7 @@ public:
 
   void reset();
 
-  struct MSP430Chunk step();
+  struct MSP430Chunk step(const int16_t);
 
   void end();
 
@@ -44,7 +44,11 @@ public:
 private:
   struct elf32_struct_t * m_elf32;
 
-  void run_and_fill_snapshot(struct MSP430Snapshot& snapshot);
+  uint8_t m_p1_in;
+  bool m_p1_in_b;
 
-  void port_read(const uint8_t port_id, uint8_t& port);
+  void run_and_fill_snapshot(struct MSP430Snapshot&);
+
+  void port_read(const uint8_t, uint8_t&);
+  void port_write(const uint8_t, const uint8_t);
 };

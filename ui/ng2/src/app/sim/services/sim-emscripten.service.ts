@@ -64,11 +64,11 @@ export class SimEmscriptenService {
     /* tslint:enable:no-bitwise */
   }
 
-  step(): {
+  step(p1_in = -1): {
       readonly UPTIME_MS: number,
       readonly sss: StepSnapshot_t[]} {
 
-    const ss: StepSnapshot_t[] = this.lazySim.step(),
+    const ss: StepSnapshot_t[] = this.lazySim.step(p1_in),
           ss_last = ss[ss.length - 1];
 
     if (ss_last.signal) {

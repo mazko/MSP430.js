@@ -12,11 +12,13 @@ import { GistService } from './sim/services/gist.service';
 import { AppComponent } from './app.component';
 import { SimComponent } from './sim/sim.component';
 import { Board1Component } from './sim/boards/board1/board1.component';
+import { Board2Component } from './sim/boards/board2/board2.component';
 import { GistComponent } from './sim/gist/gist.component';
 
 
 const routes: Routes = [
   { path: 'board/1', component: Board1Component },
+  { path: 'board/2', component: Board2Component },
   { path: '', redirectTo: 'board/1', pathMatch: 'full' },
   { path: ':id', component: GistComponent },
 ];
@@ -27,6 +29,7 @@ const routes: Routes = [
     AppComponent,
     SimComponent,
     Board1Component,
+    Board2Component,
     GistComponent
   ],
   imports: [

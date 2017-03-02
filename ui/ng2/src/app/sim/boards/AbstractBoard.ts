@@ -101,14 +101,19 @@ export abstract class AbstractBoard implements OnDestroy {
       }
     };
     // start
-    next();
+    setTimeout(next, 0);
   }
 
   @ui_catcher
   private start(): void {
     if (this._simSatate === SimStateEnum.READY) {
-      this._state.write_elf_file_to_fs();
-      this._sim.init(this._state.ELF_FILE_NAME);
+      try {
+        this._state.write_elf_file_to_fs();
+        this._sim.init(this._state.ELF_FILE_NAME);
+      } catch (e) {
+        this._sim.end();
+        throw e;
+      }
       this._do_sim();
       this._simSatate = SimStateEnum.RUNNING;
       this._state.isRunning = true;
