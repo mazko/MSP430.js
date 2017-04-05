@@ -138,20 +138,31 @@ export class SSD1306 {
             cursor.page = page;
 
           } else if (data >= SSD1306_VIRT_SET_COLUMN_LOW_NIBBLE &&
-              data < SSD1306_VIRT_SET_COLUMN_LOW_NIBBLE + 0xF) {
+              data <= SSD1306_VIRT_SET_COLUMN_LOW_NIBBLE + 0xF) {
             const d = data - SSD1306_VIRT_SET_COLUMN_LOW_NIBBLE;
             /* tslint:disable:no-bitwise */
             cursor.column = (cursor.column & 0xF0) | (d & 0xF);
             /* tslint:enable:no-bitwise */
 
           } else if (data >= SSD1306_VIRT_SET_COLUMN_HIGH_NIBBLE &&
-              data < SSD1306_VIRT_SET_COLUMN_HIGH_NIBBLE + 0xF) {
+              data <= SSD1306_VIRT_SET_COLUMN_HIGH_NIBBLE + 0xF) {
             const d = data - SSD1306_VIRT_SET_COLUMN_HIGH_NIBBLE;
             /* tslint:disable:no-bitwise */
             cursor.column = (cursor.column & 0xF) | ((d & 0xF) << 4);
             /* tslint:enable:no-bitwise */
           } else {
             console.log(`SSD1306: UNKNOWN COMMAND: 0x${data.toString(16).toUpperCase()}`);
+          }
+
+          // assert bounds
+          if (cursor.column >= SSD1306_VIRT_COLUMNS || cursor.column < 0) {
+            console.log(`SSD1306: column out of bounds: ${cursor.column}`);
+            cursor.column = 0;
+          }
+          // cursor.page currently never out of bounds (just unknown command)
+          if (cursor.page >= SSD1306_VIRT_PAGES || cursor.page < 0) {
+            console.log(`SSD1306: page out of bounds: ${cursor.page}`);
+            cursor.page = 0;
           }
       }
     }

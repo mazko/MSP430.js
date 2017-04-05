@@ -140,6 +140,9 @@ int main(void) {
       while (P1IN);
     }
 
+    // test out of bounds should print console.log  
+    ssd1306_write_byte(128, 8, 0);
+
     for(;;) {
 
       // leds
