@@ -6,11 +6,11 @@
  --><div class="btn-group sim-cp" dropdown>
     <label id="split-button" class="btn btn-default btn-lg" (change)="elf_changed($event)">ELF<input type="file" accept=".out,.elf" style="display: none;">
     </label>
-    <button type="button" class="btn btn-default btn-lg dropdown-toggle-split" dropdownToggle [disabled]="isRunning">
+    <button type="button" class="btn btn-default btn-lg dropdown-toggle dropdown-toggle-split" dropdownToggle [disabled]="isRunning">
     <span class="caret"></span>
     <span class="sr-only">Split button!</span>
     </button>
-    <ul class="dropdown-menu" dropdownMenu role="menu" aria-labelledby="split-button">
+    <ul class="dropdown-menu" *dropdownMenu role="menu" aria-labelledby="split-button">
       <li *ngFor="let board of boards" role="menuitem">
         <a class="dropdown-item" [routerLink]="['/board', board.id]">{{board.name}}</a>
       </li>
