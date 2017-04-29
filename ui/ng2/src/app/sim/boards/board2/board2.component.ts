@@ -124,7 +124,7 @@ export class Board2Component extends AbstractBoard implements OnInit {
 
   };
 
-  private _ssd1306 = new SSD1306();
+  private _ssd1306: SSD1306;
 
   getPixel(idx: number): string {
     if (this._ssd1306.DISPLAY_INVERT) {
