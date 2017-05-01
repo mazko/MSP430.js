@@ -47,10 +47,16 @@ emmake make CFLAGS="$1 -Werror -Wno-error=shift-negative-value"
 # https://kripken.github.io/emscripten-site/docs/optimizing/Optimizing-Code.html#profiling
 # https://nodejs.org/uk/docs/guides/simple-profiling/
 # node --prof test.node.js && node --prof-process isolate-*.log
-emcc "$@" ../embind.cpp ../MSP430.cpp ../nop-tracer.cpp \
-  -Werror -Wall -s ERROR_ON_UNDEFINED_SYMBOLS=1 \
+
+EMCFLAGS="$@ -DMSP430f1611"
+
+emcc $EMCFLAGS ../MSP430.cpp ../nop-tracer.cpp \
+  -Werror -Wall -Wmissing-prototypes -o emccmspsim.lib.o
+
+emcc $EMCFLAGS ../embind.cpp emccmspsim.lib.o \
+  -s ERROR_ON_UNDEFINED_SYMBOLS=1 \
   --memory-init-file 0 --bind -o wsim-embind.js \
-  -DMSP430f1611 arch/msp430/libmsp430f1611.a \
+  arch/msp430/libmsp430f1611.a \
   libelf/libelf.a \
   liblogger/liblogger.a
 
