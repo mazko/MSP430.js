@@ -48,10 +48,11 @@ emmake make CFLAGS="$1 -Werror -Wno-error=shift-negative-value"
 # https://nodejs.org/uk/docs/guides/simple-profiling/
 # node --prof test.node.js && node --prof-process isolate-*.log
 
-EMCFLAGS="$@ -DMSP430f1611"
+EMCFLAGS="$@ -DMSP430f1611 -Werror -Wall"
 
+# clang has a -Weverything flag that, unlike "-Wall", will enable all compiler warnings
 emcc $EMCFLAGS ../MSP430.cpp ../nop-tracer.cpp \
-  -Werror -Wall -Wmissing-prototypes -o emccmspsim.lib.o
+  -Wmissing-prototypes -o emccmspsim.lib.o
 
 emcc $EMCFLAGS ../embind.cpp emccmspsim.lib.o \
   -s ERROR_ON_UNDEFINED_SYMBOLS=1 \

@@ -1,6 +1,6 @@
-#include <stdint.h>
-
 extern "C" {
+
+  #include <stdint.h>
 
   #include "./wsim-src/liblogger/logger.h"
   #include "./wsim-src/libelf/libelf.h"
@@ -13,6 +13,7 @@ extern "C" {
   #include "./wsim-src/arch/common/debug.h"
   #define  EMMBIND_EXTERN_COMPILE_PATCH
   #include "./wsim-src/arch/msp430/msp430.h"
+
 }
 
 
