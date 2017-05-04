@@ -11,6 +11,33 @@ const sim = new MSP430();
 assert( sim.init('./p.elf', 32768, 1000000, 6 /* verbose 0-6 */) === 0 );
 sim.print_description();
 
+
+// test seq
+(function() {
+  const values = []; let offset = -1;
+  for (let watchdog = 42; --watchdog;) {
+    const snapshots = sim.step(-1);
+    for (const snapshot of snapshots) {
+      if (offset === -1 && snapshot.PORT5) {
+        offset = values.length;
+      }
+      values.push(snapshot.PORT5);
+    }
+  }
+
+  assert(offset > -1);
+  assert(values.length === 100 * 41);
+  assert(values.length >= offset + 242);
+  assert(values[241 + offset] === 242, 
+            values.slice(offset, offset + 241));
+
+  for (let i = 0; i < 242; i++) {
+    assert(values[i + offset] === i + 1, 
+            values.slice(offset + i, offset + 241));
+  }
+})();
+
+
 var realtime_last_sys = Date.now(),
     last_pin = null;
 
@@ -19,7 +46,7 @@ function next() {
 
   let sim_delta, watchdog = 0;
   for (const date_delta = Date.now() - realtime_last_sys; watchdog < 42; watchdog++) {
-    const snapshots = sim.step();
+    const snapshots = sim.step(-1);
     assert(snapshots.length === 100);
     const snapshot = snapshots[snapshots.length -1];
     assert(snapshot.signal === 0);
