@@ -117,6 +117,58 @@ index 78de3d9..0c41ec7 100644
      }
  }
  
+diff --git a/libelf/libelf.c b/libelf/libelf.c
+index ea4a46e..0e0cae3 100644
+--- a/libelf/libelf.c
++++ b/libelf/libelf.c
+@@ -95,6 +95,8 @@ void libelf_dump_section(uint8_t* data, uint32_t addr, uint32_t size, int maxlin
+ /***************************************************/
+ /***************************************************/
+ 
++#if 0
++
+ #define SECTION_NUMBER  30
+ #define SECTION_MAXNAME 100
+ 
+@@ -107,6 +109,7 @@ struct section_info_t {
+ 
+ static struct section_info_t secinfo[SECTION_NUMBER];
+ 
++#endif
+ 
+ int libelf_set_section_info(int i,char *name, int addr, int offset, int size)
+ {
+@@ -115,6 +118,8 @@ int libelf_set_section_info(int i,char *name, int addr, int offset, int size)
+     i,name,addr,offset,size);
+   */
+ 
++#if 0
++
+   if (i >= SECTION_NUMBER)
+     {
+       ERROR("libelf: too much sections in elf file\n");
+@@ -123,9 +128,13 @@ int libelf_set_section_info(int i,char *name, int addr, int offset, int size)
+   secinfo[i].addr   = addr;
+   secinfo[i].offset = offset;
+   secinfo[i].size   = size;
++
++#endif
++
+   return 0;
+ }
+ 
++#if 0
+ 
+ static void strtolower(char *dst, const char *src, int max)
+ {
+@@ -162,6 +171,7 @@ int libelf_get_section_offset(const char* name)
+ # undef BUF_MAX
+ }
+ 
++#endif
+ /* ************************************************** */
+ /* ************************************************** */
+ /* ************************************************** */
 diff --git a/libtracer/tracer.h b/libtracer/tracer.h
 index de5ee0b..2fa26c4 100644
 --- a/libtracer/tracer.h
