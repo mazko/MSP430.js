@@ -65,39 +65,57 @@ export abstract class AbstractBoard implements OnDestroy {
   protected abstract _do_apply_steps(): void;
 
   private _do_sim(): void {
-    let date_last = Date.now(), health_cache = null;
+    let date_last = null, health_cache = null;
 
     const next = (): void => {
 
-      if (this._simSatate === SimStateEnum.STOPPING) {
-        this._simSatate = SimStateEnum.READY;
-        this._state.isRunning = false;
-        this._sim.end();
-      } else {
+      if (date_last === null) {
+        date_last = Date.now();
+      }
 
-        const date_delta = Date.now() - date_last;
-        let sim_delta = this._do_step() - date_delta, watchdog = 1;
+      switch (this._simSatate) {
 
-        if (sim_delta < -1000 /* 1 sec late, bad :( */) {
-          console.log('WSIM: dt [' + sim_delta + '] is unadjustable, reset timer');
-          date_last -= sim_delta;
-        } else {
-          while (++watchdog < 42 && this._simSatate === SimStateEnum.RUNNING) {
-            sim_delta = this._do_step() - date_delta;
-            if (sim_delta > 100 /* 100ms ahead, good :) */) {
+        case SimStateEnum.STOPPING:
+          this._simSatate = SimStateEnum.READY;
+          this._state.isRunning = false;
+          this._sim.end();
+          break;
+
+        case SimStateEnum.RUNNING:
+          let sim_delta;
+          const ui_date_now = Date.now();
+          do {
+            const date_now = Date.now();
+            sim_delta = this._do_step() - (date_now - date_last);
+            // _do_step -> exception -> ui_catcher -> stop() -> SimStateEnum.STOPPING
+            if (this._simSatate !== SimStateEnum.RUNNING) {
+              next(); // cleanup
+              return;
+            }
+            if (date_now - ui_date_now > 22 /* UI antifreeze */) {
               break;
             }
+          } while (sim_delta < 42 /* 42ms ahead is enough :) */);
+
+          // console.log(`ui_delta: ${Date.now() - ui_date_now}, sim_delta: ${sim_delta}`);
+
+          if (sim_delta < -1000 /* 1 sec late, bad :( */) {
+            console.log('WSIM: dt [' + sim_delta + '] is unadjustable, reset timer');
+            date_last -= sim_delta;
           }
-        }
 
-        this._do_apply_steps();
+          this._do_apply_steps();
 
-        if (health_cache !== (sim_delta > 0)) {
-          health_cache = (sim_delta > 0);
-          this._controller.healthChanged(health_cache);
-        }
+          if (health_cache !== (sim_delta > 0)) {
+            health_cache = (sim_delta > 0);
+            this._controller.healthChanged(health_cache);
+          }
 
-        setTimeout(next, Math.max(0, sim_delta));
+          setTimeout(next, Math.max(0, sim_delta));
+          break;
+
+        default:
+          console.log('ERROR: this._simSatate == ' + this._simSatate);
       }
     };
     // start
@@ -107,16 +125,12 @@ export abstract class AbstractBoard implements OnDestroy {
   @ui_catcher
   private start(): void {
     if (this._simSatate === SimStateEnum.READY) {
-      try {
-        this._state.write_elf_file_to_fs();
-        this._sim.init(this._state.ELF_FILE_NAME);
-      } catch (e) {
-        this._sim.end();
-        throw e;
-      }
-      this._do_sim();
+      this._do_sim(); // deferred by setTimeout
       this._simSatate = SimStateEnum.RUNNING;
       this._state.isRunning = true;
+      // exception -> ui_catcher -> stop() -> SimStateEnum.READY
+      this._state.write_elf_file_to_fs();
+      this._sim.init(this._state.ELF_FILE_NAME);
     } else {
       throw new Error('Skip start. Not ready.');
     }

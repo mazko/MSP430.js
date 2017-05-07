@@ -40,7 +40,7 @@ fi
 
 
 # emmake make clean
-emmake make CFLAGS="$1 -Werror -Wno-error=shift-negative-value"
+emmake make CFLAGS="$1 -Werror -Wall -Wno-error=shift-negative-value"
 
 # https://github.com/kripken/emscripten/blob/master/src/settings.js
 # --profiling
