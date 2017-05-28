@@ -8,5 +8,12 @@
 (env)~$ ng lint && ng build --prod && cp src/404.html ./dist/
 
 # node --stack-size=100000 `which ng` build --prod
-# bash -c 'cd dist && busybox httpd -v -f -p 8000'
-# python3 -m http.server
+
+# test server
+
+# bash -c 'cd dist && busybox httpd -v -f -p 8042'
+# python3 -m http.server 8042
+
+# 404.html support
+# nodeenv ~/virtualenvs/test-server --prebuilt && . ~/virtualenvs/test-server/bin/activate && npm install http-server -g
+# http-server dist -p 8042 
