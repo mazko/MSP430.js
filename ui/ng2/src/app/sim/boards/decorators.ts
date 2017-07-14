@@ -1,4 +1,4 @@
-import { AbstractBoard } from './AbstractBoard';
+import { ControllerService } from '../services/controller.service';
 
 
 // http://stackoverflow.com/q/29775830/
@@ -17,11 +17,16 @@ export function ui_catcher(
       // run and return the result of the original method
       return originalMethod.apply(this, args);
     } catch (err) {
-      const this_: AbstractBoard = this;
+      const this_: IUICatcher = this;
       this_._controller.errorOccured(err);
       this_._controller.stopSimulation();
     }
   };
 
   return descriptor;
+}
+
+
+export interface IUICatcher {
+    readonly _controller: ControllerService;
 }

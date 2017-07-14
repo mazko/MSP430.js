@@ -3,7 +3,7 @@ import { SimEmscriptenService } from '../services/sim-emscripten.service';
 import { ControllerService } from '../services/controller.service';
 import { StateService } from '../services/state.service';
 import { Subscription } from 'rxjs/Subscription';
-import { ui_catcher } from './decorators';
+import { ui_catcher, IUICatcher } from './decorators';
 
 
 enum SimStateEnum {
@@ -24,7 +24,7 @@ enum SimStateEnum {
 */
 
 @Injectable()
-export abstract class AbstractBoard implements OnDestroy {
+export abstract class AbstractBoard implements OnDestroy, IUICatcher {
 
   private _simSatate = SimStateEnum.READY;
 

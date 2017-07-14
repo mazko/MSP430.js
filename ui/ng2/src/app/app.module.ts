@@ -14,11 +14,15 @@ import { SimComponent } from './sim/sim.component';
 import { Board1Component } from './sim/boards/board1/board1.component';
 import { Board2Component } from './sim/boards/board2/board2.component';
 import { GistComponent } from './sim/gist/gist.component';
+import { Board3Component } from './sim/boards/board3/board3.component';
+import { Board4Component } from './sim/boards/board4/board4.component';
 
 
 const routes: Routes = [
   { path: 'board/1', component: Board1Component },
   { path: 'board/2', component: Board2Component },
+  { path: 'board/3', component: Board3Component },
+  { path: 'board/4', component: Board4Component },
   { path: '', redirectTo: 'board/1', pathMatch: 'full' },
   { path: ':id', component: GistComponent },
 ];
@@ -30,7 +34,9 @@ const routes: Routes = [
     SimComponent,
     Board1Component,
     Board2Component,
-    GistComponent
+    GistComponent,
+    Board3Component,
+    Board4Component
   ],
   imports: [
     Ng2BootstrapModule.forRoot(),

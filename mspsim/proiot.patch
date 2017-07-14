@@ -1,0 +1,587 @@
+diff --git a/Makefile b/Makefile
+index 427ffe5..07f93a5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -81,7 +81,7 @@ TIMERTEST := tests/timertest.firmware
+ SCRIPTS := ${addprefix scripts/,autorun.sc duty.sc}
+ BINARY := README.txt license.txt CHANGE_LOG.txt images/*.jpg images/*.png firmware/*/*.firmware ${SCRIPTS}
+ 
+-PACKAGES := se/sics/mspsim ${addprefix se/sics/mspsim/,core chip cli config debug platform ${addprefix platform/,esb sky jcreate sentillausb z1 tyndall ti wismote} plugin profiler emulink net ui util extutil/highlight extutil/jfreechart}
++PACKAGES := se/sics/mspsim ${addprefix se/sics/mspsim/,core chip cli config debug platform ${addprefix platform/,esb sky jcreate sentillausb z1 tyndall ti wismote proiot3 proiot4} plugin profiler emulink net ui util extutil/highlight extutil/jfreechart}
+ 
+ SOURCES := ${wildcard *.java $(addsuffix /*.java,$(PACKAGES))}
+ 
+diff --git a/se/sics/mspsim/emulink/EmuLink.java b/se/sics/mspsim/emulink/EmuLink.java
+index 155af60..237204f 100755
+--- a/se/sics/mspsim/emulink/EmuLink.java
++++ b/se/sics/mspsim/emulink/EmuLink.java
+@@ -56,7 +56,7 @@ import se.sics.mspsim.core.MSP430Constants;
+ import se.sics.mspsim.platform.GenericNode;
+ import se.sics.mspsim.util.Utils;
+ 
+-public class EmuLink {
++final public class EmuLink implements IEmuLink {
+ 
+     private Socket socket;
+     private BufferedReader in;
+@@ -97,6 +97,11 @@ public class EmuLink {
+             return false;
+         }
+         nodes.put(id, node);
++
++        if (node instanceof se.sics.mspsim.platform.IProiotNode) {
++          ((se.sics.mspsim.platform.IProiotNode)node).setEmuLink(this);
++        }
++
+         return true;
+     }
+     
+@@ -151,8 +156,12 @@ public class EmuLink {
+         }
+     };
+ 
++    private static String upToNCharacters(final String s, final int n) {
++        return s.substring(0, Math.min(s.length(), n));
++    }
++
+     protected boolean handleMessage(JSONObject json) {
+-        System.out.println("EmuLink: RECV " + json.toJSONString());
++        System.out.println("EmuLink: RECV " + upToNCharacters(json.toJSONString(), 333));
+         String event = json.getAsString("event");
+         if ("emulation_control".equals(event)) {
+             String command = json.getAsString("data");
+@@ -228,8 +237,25 @@ public class EmuLink {
+ 
+                 // Time to close the connection
+                 return false;
++            } else if (command.startsWith("proiot$")) {
++                String[] nodes = getNodes(json);
++                Object cmdValue = json.get("proiot$value");
++                if (nodes == null) {
++                    for (GenericNode node : this.nodes.values()) {
++                        ((se.sics.mspsim.platform.IProiotNode)node).handleMoreCmd(command, cmdValue);
++                    }
++                } else {
++                    for(String id : nodes) {
++                        GenericNode node = this.nodes.get(id);
++                        if (node != null) {
++                            ((se.sics.mspsim.platform.IProiotNode)node).handleMoreCmd(command, cmdValue);
++                        } else {
++                            System.err.println("EmuLink: could not find node '" + id + "'");
++                        }
++                    }
++                }
+             }
+-            sendToSimulator("{\"response\":\"emulation_control\",\"data\":1}");
++            sendToSimulator("{\"response\":\"emulation_control\",\"data\":\"" + command + "\"}");
+ 
+         } else if ("create".equals(event)) {
+             createNodes(json);
+@@ -237,11 +263,12 @@ public class EmuLink {
+         } else if ("write".equals(event)) {
+             String[] nodes = getNodes(json);
+             String file = json.getAsString("file");
++            JSONArray elf8 = json.getJSONArray("elf8");
+             if (nodes == null) {
+                 System.err.println("EmuLink: no node specified for write");
+-            } else if (file == null) {
+-                System.err.println("EmuLink: no file specified for write");
+-            } else if (!new File(file).isFile()) {
++            } else if (file == null && elf8 == null) {
++                System.err.println("EmuLink: no file or elf8 specified for write");
++            } else if (elf8 == null && !new File(file).isFile()) {
+                 System.err.println("EmuLink: could not find file '" + file + "' for write");
+             } else {
+                 for(String id : nodes) {
+@@ -251,7 +278,20 @@ public class EmuLink {
+                         continue;
+                     }
+                     try {
+-                        node.loadFirmware(file);
++                        if (elf8 == null) {
++                            node.loadFirmware(file);
++                        } else {
++                            byte[] elfBytes = new byte[elf8.size()];
++                            for(int i = 0; i < elfBytes.length; i++) {
++                                elfBytes[i] = (byte)(long)elf8.get(i);
++                            }
++                            // System.err.println(java.util.Arrays.toString(elfBytes));
++                            // try (java.io.FileOutputStream s = new java.io.FileOutputStream("bytes.dump.elf")) { s.write(elfBytes); }
++                            // echo `md5sum bytes.dump.elf | awk '{ print $1}'` firmware/proiot/a.out | md5sum -c -
++                            se.sics.mspsim.util.ELF elf = new se.sics.mspsim.util.ELF(elfBytes);
++                            elf.readAll();
++                            node.loadFirmware(elf);
++                        }
+                         node.getCPU().reset();
+                     } catch (IOException e) {
+                         System.err.println("EmuLink: failed to load firmware '" + file + "'");
+@@ -286,7 +326,8 @@ public class EmuLink {
+         return true;
+     }
+ 
+-    protected void sendToSimulator(String message) {
++    @Override
++    public synchronized void sendToSimulator(String message) {
+         if (out != null) {
+             out.write(message);
+             out.flush();
+diff --git a/se/sics/mspsim/emulink/IEmuLink.java b/se/sics/mspsim/emulink/IEmuLink.java
+new file mode 100644
+index 0000000..acc1665
+--- /dev/null
++++ b/se/sics/mspsim/emulink/IEmuLink.java
+@@ -0,0 +1,5 @@
++package se.sics.mspsim.emulink;
++
++public interface IEmuLink {
++  void sendToSimulator(String message);
++}
+\ No newline at end of file
+diff --git a/se/sics/mspsim/platform/IProiotNode.java b/se/sics/mspsim/platform/IProiotNode.java
+new file mode 100644
+index 0000000..0c1b98d
+--- /dev/null
++++ b/se/sics/mspsim/platform/IProiotNode.java
+@@ -0,0 +1,8 @@
++package se.sics.mspsim.platform;
++
++import se.sics.mspsim.emulink.IEmuLink;
++
++public interface IProiotNode {
++  void setEmuLink(IEmuLink emulink);
++  void handleMoreCmd(String cmd, Object value);
++}
+diff --git a/se/sics/mspsim/platform/proiot3/Assert.java b/se/sics/mspsim/platform/proiot3/Assert.java
+new file mode 100644
+index 0000000..5bbe995
+--- /dev/null
++++ b/se/sics/mspsim/platform/proiot3/Assert.java
+@@ -0,0 +1,18 @@
++package se.sics.mspsim.platform.proiot3;
++
++
++public final class Assert {
++
++  private Assert() {}
++
++  static void ok(boolean cond, String msg) {
++    if (!cond) {
++      System.err.println("!!! ASSERT !!!: " + msg);
++      System.exit(42);
++    }
++  }
++
++  static void fail(String msg) {
++    ok(false, msg);
++  }
++}
+diff --git a/se/sics/mspsim/platform/proiot3/Proiot3Node.java b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
+new file mode 100644
+index 0000000..19cb80a
+--- /dev/null
++++ b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
+@@ -0,0 +1,213 @@
++package se.sics.mspsim.platform.proiot3;
++
++import se.sics.mspsim.core.MSP430Constants;
++import se.sics.mspsim.config.MSP430f1611Config;
++import se.sics.mspsim.core.IOPort;
++import se.sics.mspsim.core.IOUnit;
++import se.sics.mspsim.core.PortListener;
++import se.sics.mspsim.platform.IProiotNode;
++import se.sics.mspsim.platform.GenericNode;
++import se.sics.mspsim.emulink.IEmuLink;
++import se.sics.mspsim.chip.Button;
++import se.sics.mspsim.ui.SerialMon;
++import se.sics.mspsim.core.USART;
++
++import java.util.HashMap;
++import java.awt.GraphicsEnvironment;
++
++import org.json.simple.JSONObject;
++
++
++public class Proiot3Node extends GenericNode implements IProiotNode {
++
++  private IEmuLink emulink;
++
++  private final Button[] buttons = new Button[8];
++  
++  // http://docs.oracle.com/javase/specs/jls/se7/html/jls-4.html#jls-4.12.5
++  // For all reference types (§4.3), the default value is null
++  private SerialMon serialMon;
++
++  @Override
++  public void setEmuLink(IEmuLink emulink) {
++    this.emulink = emulink;
++  }
++
++  @Override
++  public void handleMoreCmd(final String cmd, final Object value) {
++    if ("proiot$button-1".equals(cmd)) {
++      for (final Button b : buttons) {
++        b.setPressed((boolean)value);
++      }
++    } else if (cmd.startsWith("proiot$button")) {
++      final String c = cmd.substring(cmd.length() - 1);
++      buttons[Integer.parseInt(c)].setPressed((boolean)value);
++    } else {
++      Assert.fail("ProiotNode: UNHANDLED \"" + cmd + "\" !!!");
++    }
++  }
++
++  public Proiot3Node() {
++    super("ProiotNode", new MSP430f1611Config());
++
++    setupNode();
++
++    System.out.println("ProiotNode: created, MSPSim " + MSP430Constants.VERSION);
++
++    // cpu.setDebug(true);
++  }
++
++  private void doEvent(String name, HashMap<String, Object> data) {
++    HashMap<String, Object> json = new HashMap<String, Object>();
++    json.put("proiot$event", name);
++    json.put("proiot$data", data);
++    json.put("proiot$ms", System.currentTimeMillis());
++    emulink.sendToSimulator(new JSONObject(json).toJSONString());
++  }
++
++  private void doEventPort(final IOPort source, final int data) {
++    HashMap<String, Object> json = new HashMap<String, Object>();
++    json.put("value", data);
++    json.put("id", source.getPort());
++    doEvent("port", json);
++  }
++
++  private void portSubscribe(final String portName) {
++    final IOPort port = cpu.getIOUnit(IOPort.class, portName);
++    port.addPortListener(new PortListener() {
++
++        private int portLastValue;
++
++        public void portWrite(final IOPort source, final int data) {
++          Assert.ok(port == source, "ProiotNode: port " + portName + " != source");
++          if (portLastValue != data) {
++            doEventPort(source, data);
++            portLastValue = data;
++          }
++        }
++    });
++  }
++
++  private void setupP2P3() {
++
++    final IOPort port2 = cpu.getIOUnit(IOPort.class, "P2"),
++                 port3 = cpu.getIOUnit(IOPort.class, "P3");
++
++    new Object() {
++
++      int port2LastValue;
++
++      // Anonymous inner classes can't have a constructor,
++      // so they're a pretty natural fit for instance initializers
++
++      {
++        port2.addPortListener(new PortListener() {
++            public void portWrite(final IOPort source, final int data) {
++              
++              // assert both listeners are in the same thread
++              // System.out.println("Thread PORT2 # " + Thread.currentThread().getId());
++
++              Assert.ok(port2 == source, "ProiotNode: port2 != source");
++              port2LastValue = data;
++            }
++        });
++
++        port3.addPortListener(new PortListener() {
++
++            int port3LastValue;
++
++            final int SSD1306_E = 0b10;
++            final int SSD1306_COMMAND_OR_DATA = 0b1;
++
++            private void ssd1306(final int data) {
++                // bit test ssd1306.E
++                if ( (data & SSD1306_E) != 0 && (port3LastValue & SSD1306_E) == 0 ) {
++                  HashMap<String, Object> json = new HashMap<String, Object>();
++                  json.put("value", port2LastValue);
++                  json.put("command", (data & SSD1306_COMMAND_OR_DATA) == 0);
++                  doEvent("ssd1306", json);
++                }
++            }
++
++            private void leds(final int data) {
++
++              final int LEDS_MASK = (serialMon == null ? 0xFF : 0b11001111) 
++                ^ SSD1306_E ^ SSD1306_COMMAND_OR_DATA; // P3(4,5) = USART0 TXD/RXD; 
++              
++              if ( (port3LastValue & LEDS_MASK) != (data & LEDS_MASK) ) {
++                doEventPort(port3, (data & LEDS_MASK));
++              }
++            }
++
++            public void portWrite(final IOPort source, final int data) {
++
++              // assert both listeners are in the same thread
++              // System.out.println("Thread PORT3 # " + Thread.currentThread().getId());
++
++              Assert.ok(port3 == source, "ProiotNode: port3 != source");
++
++              ssd1306(data);
++              leds(data);
++
++              port3LastValue = data;
++            }
++        });
++      }
++
++    };
++  }
++
++  private void setupNodePorts() {
++    setupP2P3();
++    portSubscribe("P4");
++    portSubscribe("P5");
++    portSubscribe("P6");
++
++    final IOPort port1 = cpu.getIOUnit(IOPort.class, "P1");
++    for (int i = 0; i < buttons.length; i++) {
++      buttons[i] = new Button("Button" + i, cpu, port1, i, true);
++    }
++  }
++
++  // see autorun.sc
++  private void setupUART() {
++    // Add some windows for listening to serial output
++    USART usart = cpu.getIOUnit(USART.class, "USART0");
++    Assert.ok(usart != null, "ProiotNode: USART0 ?");
++    if (!GraphicsEnvironment.isHeadless()) {
++      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
++    }
++  }
++
++  @Override
++  public void setupNode() {
++    setupNodePorts();
++    setupUART();
++  }
++
++  @Override
++  public int getModeMax() {
++    return 0;
++  }
++
++  @Override
++  public void start() {
++    if (serialMon != null) {
++      serialMon.start();  
++    }
++
++    super.start();
++  }
++
++  @Override
++  public void stop() {
++    System.out.println("ProiotNode: stopped " + cpu.info());
++    super.stop();
++
++    if (serialMon != null) {
++      serialMon.stop();
++    }
++
++  }
++
++}
+diff --git a/se/sics/mspsim/platform/proiot4/Assert.java b/se/sics/mspsim/platform/proiot4/Assert.java
+new file mode 100644
+index 0000000..8d31a57
+--- /dev/null
++++ b/se/sics/mspsim/platform/proiot4/Assert.java
+@@ -0,0 +1,18 @@
++package se.sics.mspsim.platform.proiot4;
++
++
++public final class Assert {
++
++  private Assert() {}
++
++  static void ok(boolean cond, String msg) {
++    if (!cond) {
++      System.err.println("!!! ASSERT !!!: " + msg);
++      System.exit(42);
++    }
++  }
++
++  static void fail(String msg) {
++    ok(false, msg);
++  }
++}
+diff --git a/se/sics/mspsim/platform/proiot4/Proiot4Node.java b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
+new file mode 100644
+index 0000000..1b08221
+--- /dev/null
++++ b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
+@@ -0,0 +1,161 @@
++package se.sics.mspsim.platform.proiot4;
++
++import se.sics.mspsim.core.MSP430Constants;
++import se.sics.mspsim.config.MSP430f1611Config;
++import se.sics.mspsim.core.IOPort;
++import se.sics.mspsim.core.IOUnit;
++import se.sics.mspsim.core.PortListener;
++import se.sics.mspsim.platform.IProiotNode;
++import se.sics.mspsim.platform.GenericNode;
++import se.sics.mspsim.emulink.IEmuLink;
++import se.sics.mspsim.ui.SerialMon;
++import se.sics.mspsim.core.USART;
++
++import java.util.HashMap;
++import java.awt.GraphicsEnvironment;
++
++import org.json.simple.JSONObject;
++
++
++public class Proiot4Node extends GenericNode implements IProiotNode {
++
++  private IEmuLink emulink;
++  
++  // http://docs.oracle.com/javase/specs/jls/se7/html/jls-4.html#jls-4.12.5
++  // For all reference types (§4.3), the default value is null
++  private SerialMon serialMon;
++
++  @Override
++  public void setEmuLink(IEmuLink emulink) {
++    this.emulink = emulink;
++  }
++
++  @Override
++  public void handleMoreCmd(final String cmd, final Object value) {
++    Assert.fail("ProiotNode: UNHANDLED \"" + cmd + "\" !!!");
++  }
++
++  public Proiot4Node() {
++    super("ProiotNode", new MSP430f1611Config());
++
++    setupNode();
++
++    System.out.println("ProiotNode: created, MSPSim " + MSP430Constants.VERSION);
++
++    // cpu.setDebug(true);
++  }
++
++  private void doEvent(String name, HashMap<String, Object> data) {
++    HashMap<String, Object> json = new HashMap<String, Object>();
++    json.put("proiot$event", name);
++    json.put("proiot$data", data);
++    json.put("proiot$ms", System.currentTimeMillis());
++    emulink.sendToSimulator(new JSONObject(json).toJSONString());
++  }
++
++  private void doEventPort(final IOPort source, final int data) {
++    HashMap<String, Object> json = new HashMap<String, Object>();
++    json.put("value", data);
++    json.put("id", source.getPort());
++    doEvent("port", json);
++  }
++
++  private void portSubscribe(final String portName) {
++    final IOPort port = cpu.getIOUnit(IOPort.class, portName);
++    port.addPortListener(new PortListener() {
++
++        private int portLastValue;
++
++        public void portWrite(final IOPort source, final int data) {
++          Assert.ok(port == source, "ProiotNode: port " + portName + " != source");
++          if (portLastValue != data) {
++            doEventPort(source, data);
++            portLastValue = data;
++          }
++        }
++    });
++  }
++
++  private void setupP3() {
++
++    final IOPort port3 = cpu.getIOUnit(IOPort.class, "P3");
++
++    port3.addPortListener(new PortListener() {
++
++        int port3LastValue;
++
++        private void leds(final int data) {
++
++          final int LEDS_MASK = (serialMon == null ? 0xFF : 0b11001111);
++          
++          if ( (port3LastValue & LEDS_MASK) != (data & LEDS_MASK) ) {
++            doEventPort(port3, (data & LEDS_MASK));
++          }
++        }
++
++        public void portWrite(final IOPort source, final int data) {
++
++          // assert both listeners are in the same thread
++          // System.out.println("Thread PORT3 # " + Thread.currentThread().getId());
++
++          Assert.ok(port3 == source, "ProiotNode: port3 != source");
++
++          leds(data);
++
++          port3LastValue = data;
++        }
++    });
++
++  }
++
++  private void setupNodePorts() {
++    portSubscribe("P1");
++    portSubscribe("P2");
++    setupP3();
++    portSubscribe("P4");
++    portSubscribe("P5");
++    portSubscribe("P6");
++  }
++
++  // see autorun.sc
++  private void setupUART() {
++    // Add some windows for listening to serial output
++    USART usart = cpu.getIOUnit(USART.class, "USART0");
++    Assert.ok(usart != null, "ProiotNode: USART0 ?");
++    if (!GraphicsEnvironment.isHeadless()) {
++      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
++    }
++  }
++
++  @Override
++  public void setupNode() {
++    setupNodePorts();
++    setupUART();
++  }
++
++  @Override
++  public int getModeMax() {
++    return 0;
++  }
++
++  @Override
++  public void start() {
++    if (serialMon != null) {
++      serialMon.start();  
++    }
++
++    super.start();
++  }
++
++  @Override
++  public void stop() {
++    System.out.println("ProiotNode: stopped " + cpu.info());
++    super.stop();
++
++    if (serialMon != null) {
++      serialMon.stop();
++    }
++
++  }
++
++}

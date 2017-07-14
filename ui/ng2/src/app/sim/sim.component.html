@@ -11,14 +11,14 @@
     <span class="sr-only">Split button!</span>
     </button>
     <ul class="dropdown-menu" *dropdownMenu role="menu" aria-labelledby="split-button">
-      <li *ngFor="let board of boards" role="menuitem">
-        <a class="dropdown-item" [routerLink]="['/board', board.id]">{{board.name}}</a>
+      <li *ngFor="let board of boards" [attr.role]="board && 'menuitem'" [ngClass]="board ? 'fix-me-if-null-here-routerlinkactive-adds-class-attribute-without-value' : ['divider', 'dropdown-divider']" routerLinkActive="active" >
+        <a *ngIf="board" class="dropdown-item" [routerLink]="['/board', board.id]">{{board.name}}</a>
       </li>
     </ul>
     </div><!--
 
 
- --><button (click)="run_clicked()" [disabled]="!hasElf" type="button" [attr.class]="'sim-cp btn btn-lg btn-' + (isRunning ? 'danger' : 'success')"><span [attr.class]="'glyphicon glyphicon-' + (isRunning ? 'stop' : 'play')"></span></button><!--
+ --><button (click)="run_clicked()" [disabled]="!hasElf" type="button" [class]="'sim-cp btn btn-lg btn-' + (isRunning ? 'danger' : 'success')"><span [class]="'glyphicon glyphicon-' + (isRunning ? 'stop' : 'play')"></span></button><!--
 
 
  --><button type="button" (click)="gist_clicked()" [disabled]="!gistBtnEnabled" [class]="'sim-cp btn btn-lg btn-' + (isRunning ? (isFreezed ? 'danger' : 'success') : 'warning')"><span [class]="'glyphicon glyphicon-' + (isRunning ? (isFreezed ? 'thumbs-down' : 'thumbs-up') : 'globe')"></span></button><!--

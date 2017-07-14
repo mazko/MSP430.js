@@ -1,0 +1,25 @@
+bash -c '
+  set -e
+  trap "exit" INT TERM
+  trap "kill 0" EXIT
+  nc -z localhost 8000 || while true; do
+    java -Djava.awt.headless=true -cp mspsim.js.jar se.sics.mspsim.emulink.EmuLink &
+    websockify --run-once 9148 :8000
+    echo Killing EmuLink $! && kill $!
+    wait $! || echo EmuLink exit code $?
+  done
+'
+
+Remove -Djava.awt.headless=true to enable uart UI
+
+bash -c '
+  set -e
+  trap "exit" INT TERM
+  trap "kill 0" EXIT
+  nc -z localhost 8000 || while true; do
+    java -cp mspsim.js.jar se.sics.mspsim.emulink.EmuLink &
+    websockify --run-once 9148 :8000
+    echo Killing EmuLink $! && kill $!
+    wait $! || echo EmuLink exit code $?
+  done
+'

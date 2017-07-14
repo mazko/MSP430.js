@@ -1,0 +1,143 @@
+<!--
+
+~$ java -cp mspsim.jar se.sics.mspsim.emulink.EmuLink
+~$ websockify 9148 :8000
+
+-->
+
+<html>
+  <head>
+      <meta charset="utf-8" />
+
+      <title>WebSocket MSPSim</title>
+      <script language="javascript" type="text/javascript">
+
+        'use strict';
+
+        var wsUri = "ws://localhost:9148";
+        var output;
+        var input;
+        var websocket;
+
+        function init() {
+    	    output = document.getElementById("output");
+    	    output.value = "";
+    	    input = document.getElementById("input");
+    	    testWebSocket();
+        }
+
+        function testWebSocket() {
+    	    websocket = new WebSocket(wsUri, 'base64');
+    	    websocket.onopen = onOpen;
+    	    websocket.onclose = onClose;
+    	    websocket.onmessage = onMessage;
+    	    websocket.onerror = onError;
+        }
+
+        function onOpen(evt) {
+          // don't create node 'test_id' here because of possible bugs
+          // just recreate any time before start like command line does
+        }
+
+        function onClose(evt) {
+        	writeToScreen("DISCONNECTED\n");
+        }
+
+        /* 
+          Normally when you send data through sockets, you need to
+          worry about data chunking and multiple messages in one chunk
+        */
+
+        var onMessage = (function () {
+          let brackets = 0, stuffed = false, quoted = false, sb = '';
+
+          return function (evt) {
+            const chunk = atob( evt.data );
+
+            for (let i = 0; i < chunk.length; i++) {
+                const c = chunk.charAt(i);
+                sb += c;
+
+                if (stuffed) {
+                    stuffed = false;
+                } else if (c === '\\') {
+                    stuffed = true;
+                } else if (quoted) {
+                    if (c === '"') {
+                        quoted = false;
+                    }
+                } else if (c === '"') {
+                    quoted = true;
+                } else if (c === '{') {
+                    brackets++;
+                } else if (c === '}') {
+                    brackets--;
+                    if (brackets === 0) {
+                        writeToScreen(JSON.stringify(JSON.parse(sb)) + '\n' )
+                        sb = '';
+                    }
+                }
+            }
+
+            // JSON.parse(
+            //   '[' + atob( evt.data ).toString().split('}{').join('},{') + ']'
+            // ).forEach(d => writeToScreen(JSON.stringify(d) + '\n' ));
+          }
+        })();
+
+        function onError(evt) {
+        	writeToScreen('ERR:  ' + evt.data );
+        }
+
+        function doSend(message) {
+        	writeToScreen("SENT: " + message + '\n' ); 
+        	websocket.send( btoa( message ) );
+        }
+
+        function startSim() {
+          doSend(JSON.stringify({
+            event: 'create',
+            type: 'proiot',
+            node: 'test_id'
+          }));
+
+          doSend(JSON.stringify({
+            event: 'write',
+            node: 'test_id',
+            file: 'firmware/proiot/a.out',
+          }));
+
+          doSend(JSON.stringify({
+            event: 'emulation_control',
+            data: 'start',
+          }));
+        }
+
+        function stopSim() {
+          doSend(JSON.stringify({
+            event: 'emulation_control',
+            data: 'stop',
+          }));
+        }
+
+        function writeToScreen(message) {
+        	output.value += message;
+          output.scrollTop = output.scrollHeight;
+        }
+
+        window.addEventListener("load", init, false);
+
+      </script>
+  </head>
+
+  <body>
+      <h2>WebSocket MSPSim Test</h2>
+      <form>
+          <input type="button" value="Start" onclick="startSim();" />
+          <input type="button" value="Stop" onclick="stopSim();" />
+          <br />
+          <br />
+          <textarea id="output" rows="22" cols="100"></textarea>
+      </form>
+  </body>
+</html>

@@ -43,4 +43,13 @@ export class ControllerService {
     this.healthSource.next(health);
   }
 
+  // https://basarat.gitbooks.io/typescript/docs/tips/bind.html
+  readonly assert = (cond: boolean, err = new Error('Assert')): void => {
+    if (!cond) {
+      console.error(err);
+      this.errorOccured(err);
+      this.stopSimulation();
+    }
+  }
+
 }
