@@ -71,14 +71,8 @@ export class SimComponent {
       // https://github.com/Microsoft/TypeScript/issues/299#issuecomment-168538829
       reader.onload = (f: any): void => {
         const contents = new Uint8Array(f.target.result);
-        try {
-          this._state.set_elf_file(contents);
-          this.gistBtnEnabled = true;
-        } catch (err) {
-          // console.log(f);
-          console.log(err.message || err); // error short version
-          this.alerts.push({msg: `${this._state.ELF_FILE_NAME}: ${err.message}`, type: 'danger'});
-        }
+        this._state.set_elf_file(contents);
+        this.gistBtnEnabled = true;
       };
       reader.readAsArrayBuffer(file);
     }

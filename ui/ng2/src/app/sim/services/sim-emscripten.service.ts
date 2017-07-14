@@ -3,6 +3,7 @@ import { Injectable } from '@angular/core';
 // https://angular.io/docs/ts/latest/guide/dependency-injection.html#singleton-services
 
 const EM_SIM_MODULE = window['msp430_sim_module'];
+const ELF_FILE_NAME = 'program.elf';
 
 /* tslint:disable:interface-over-type-literal */
 type StepSnapshot_t = {
@@ -39,7 +40,7 @@ export class SimEmscriptenService {
     return this._em_sim_instance;
   }
 
-  FS_createDataFile(
+  private FS_createDataFile(
       parent: string,
       name: string,
       data: Uint8Array,
@@ -47,8 +48,11 @@ export class SimEmscriptenService {
     this.lazyEm.FS_createDataFile(parent, name, data, canRead);
   }
 
-  init(fileName: string): void {
-    const code = this.lazySim.init(fileName, 32768, 4e5, 6);
+  init(data: Uint8Array): void {
+    // '.' should also work, but '/home/msp430sim' is for sure
+    // we are in own dir when msp430sim.init('./program.elf', ...) is called
+    this.FS_createDataFile('/home/msp430sim', ELF_FILE_NAME, data);
+    const code = this.lazySim.init(ELF_FILE_NAME, 32768, 4e5, 6);
     if (code) {
       throw new Error(`EmSim: bad exit code ${code} !`);
     }

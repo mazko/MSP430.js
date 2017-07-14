@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Subject } from 'rxjs/Subject';
 import { Subscription } from 'rxjs/Subscription';
-import { SimEmscriptenService } from './sim-emscripten.service';
 
 
 type StateType =
@@ -60,12 +59,13 @@ export class StateService {
     return !!this._elf_contents;
   }
 
-  get ELF_FILE_NAME(): string {
-    return 'program.elf';
-  }
-
   get elf_as_str(): string {
     return this._Uint8ToString(this._elf_contents);
+  }
+
+  get elf(): Uint8Array {
+    // https://stackoverflow.com/a/22114687
+    return new Uint8Array(this._elf_contents);
   }
 
   private _elf_contents: Uint8Array;
@@ -82,8 +82,6 @@ export class StateService {
         }
       });
   }
-
-  constructor(private readonly _sim: SimEmscriptenService) {}
 
   private _notifyState(newState: StateType): void {
     this.stateSource.next(newState);
@@ -110,12 +108,6 @@ export class StateService {
   set_elf_file_from_string(data: string): void {
     this.set_elf_file(
       new Uint8Array(data.split('').map(c => c.charCodeAt(0))));
-  }
-
-  write_elf_file_to_fs(): void {
-    // '.' should also work, but '/home/msp430sim' is for sure
-    // we are in own dir when msp430sim.init('./program.elf', ...) is called
-    this._sim.FS_createDataFile('/home/msp430sim', this.ELF_FILE_NAME, this._elf_contents);
   }
 
 }

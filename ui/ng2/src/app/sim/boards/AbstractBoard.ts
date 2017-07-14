@@ -129,8 +129,7 @@ export abstract class AbstractBoard implements OnDestroy {
       this._simSatate = SimStateEnum.RUNNING;
       this._state.isRunning = true;
       // exception -> ui_catcher -> stop() -> SimStateEnum.READY
-      this._state.write_elf_file_to_fs();
-      this._sim.init(this._state.ELF_FILE_NAME);
+      this._sim.init(this._state.elf);
     } else {
       throw new Error('Skip start. Not ready.');
     }
