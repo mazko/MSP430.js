@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Subscription } from 'rxjs/Subscription';
 import { ui_catcher, IUICatcher } from '../decorators';
 import { SSD1306 } from '../board2/parts/SSD1306';
@@ -71,7 +71,8 @@ export class Board3Component implements OnInit, OnDestroy, IUICatcher {
   constructor(
       private readonly _sim: MspsimService,
       private readonly _state: StateService,
-      readonly _controller: ControllerService) {
+      readonly _controller: ControllerService,
+      private readonly _cdref: ChangeDetectorRef) {
 
     this._subscriptions.push(_controller
       .simulationStarted$
@@ -83,8 +84,8 @@ export class Board3Component implements OnInit, OnDestroy, IUICatcher {
       .subscribe(this.stop.bind(this))
     );
 
-    // health always OK
-    this._controller.healthChanged(true);
+    // https://angular.io/api/core/ChangeDetectorRef#example
+    this._cdref.detach();
   }
 
 
@@ -105,6 +106,9 @@ export class Board3Component implements OnInit, OnDestroy, IUICatcher {
 
   @ui_catcher
   private start(): void {
+
+    let uiTimeoutId = null;
+
     const onDataEvent = (event: string, data: any) => {
 
       const assert = this._controller.assert;
@@ -137,6 +141,14 @@ export class Board3Component implements OnInit, OnDestroy, IUICatcher {
         default:
           assert(false, new Error('event ? ' + event));
       }
+
+      if (uiTimeoutId === null) {
+          uiTimeoutId = setTimeout(() => {
+            this._cdref.detectChanges();
+            uiTimeoutId = null;
+          }, 42);
+      }
+
     };
 
     this._sim.start('proiot3', onDataEvent);
@@ -187,6 +199,7 @@ export class Board3Component implements OnInit, OnDestroy, IUICatcher {
         if (!this._state.isRunning) {
           this._ssd1306 = new SSD1306();
           this._clear_leds();
+          this._cdref.detectChanges();
         }
       })
     );

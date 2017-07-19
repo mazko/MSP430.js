@@ -97,8 +97,6 @@ export class Board4Component implements OnInit, OnDestroy, IUICatcher {
       .subscribe(this.stop.bind(this))
     );
 
-    // health always OK
-    this._controller.healthChanged(true);
   }
 
 

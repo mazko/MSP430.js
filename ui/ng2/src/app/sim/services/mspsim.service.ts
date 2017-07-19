@@ -53,10 +53,7 @@ export class MspsimService {
   public stop(): void {
     if (this._simState === SimStateEnum.RUNNING) {
       this._simState = SimStateEnum.STOPPING;
-      this.doSend({
-        event: 'emulation_control',
-        data: 'stop',
-      });
+      this._websocket.close();
     }
   }
 
@@ -71,8 +68,7 @@ export class MspsimService {
       this._simState = SimStateEnum.CONNECTING;
 
       // TODO: move WebSocket in WebWorker to prevent UI freeze
-      this._websocket = new WebSocket('ws://localhost:9148', 'binary');
-      this._websocket.binaryType = 'arraybuffer';
+      this._websocket = new WebSocket('ws://localhost:9148');
 
       let timeoutID = null;
 
@@ -107,18 +103,15 @@ export class MspsimService {
       let health_cache = null, health_timeoutId = null;
 
       const proceedJSON = (json) => {
+
         if (timeoutID !== null) {
           clearTimeout(timeoutID);
           timeoutID = null;
         }
 
-        if (json.response === 'emulation_control') {
+        if (json.response === 'emulation_control' && json.data === 'start') {
 
-          if (json.data === 'start') {
-            this._simState = SimStateEnum.RUNNING;
-          } else if (json.data === 'stop') {
-            this._websocket.close();
-          }
+          this._simState = SimStateEnum.RUNNING;
 
         } else if (json.proiot$event && this._simState === SimStateEnum.RUNNING) {
 
@@ -142,56 +135,22 @@ export class MspsimService {
           }
 
         }
+
       };
 
 
-      this._websocket.onmessage = ( function() {
-
-        let brackets = 0, stuffed = false, quoted = false, sb = '';
-
-        return function (evt) {
-          new Uint8Array(evt.data).forEach( function( i ) {
-            const c = String.fromCharCode(i);
-            sb += c;
-
-            if (stuffed) {
-                stuffed = false;
-            } else if (c === '\\') {
-                stuffed = true;
-            } else if (quoted) {
-                if (c === '"') {
-                    quoted = false;
-                }
-            } else if (c === '"') {
-                quoted = true;
-            } else if (c === '{') {
-                brackets++;
-            } else if (c === '}') {
-                brackets--;
-                if (brackets === 0) {
-                    proceedJSON(JSON.parse(sb));
-                    sb = '';
-                }
-            }
-          });
-        };
-      })();
-
-
-      this._websocket.onerror = (err) => {
-        this.errorOccured(new Error('websockify 9148 :8000'));
-        this._websocket.close();
-        this._simState = SimStateEnum.STOPPING;
+      this._websocket.onmessage = (evt) => {
+          proceedJSON(JSON.parse(evt.data));
       };
 
 
+      // https://stackoverflow.com/a/40084550
       this._websocket.onclose = (err) => {
         if (this._simState === SimStateEnum.TIMEOUT) {
-          this.errorOccured(
-            new Error('se.sics.mspsim.elink.EmuLink is busy'));
+          this.errorOccured(new Error('se.sics.mspsim.emulink.WSEmuLink is busy'));
         } else if (this._simState !== SimStateEnum.STOPPING) {
-          this.errorOccured(
-            new Error('java -cp mspsim.js.jar se.sics.mspsim.elink.EmuLink'));
+          console.log(`WS closed by error ? Code: ${err.code}, reason: ${err.reason}, wasClean: ${err.wasClean}`);
+          this.errorOccured(new Error('java -cp mspsim.js.jar se.sics.mspsim.emulink.WSEmuLink'));
         }
         this._websocket = null;
         this._simState = SimStateEnum.READY;

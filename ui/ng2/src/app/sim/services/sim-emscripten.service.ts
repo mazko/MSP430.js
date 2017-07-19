@@ -89,8 +89,12 @@ export class SimEmscriptenService {
   end(): void {
     this.lazySim.end();
     this.lazySim.dump_stats();
-    // TODO: possible memory leak
-    this._em_sim_instance = this._em_module = null;
+    try {
+      // https://kripken.github.io/emscripten-site/docs/porting/connecting_cpp_and_javascript/embind.html#memory-management
+      this.lazySim.delete();
+    } finally {
+      this._em_sim_instance = this._em_module = null;
+    }
   }
 
 }
