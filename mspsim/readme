@@ -1,3 +1,20 @@
-1) java -Djava.awt.headless=true -cp mspsim.js.jar 
+0) Examples:
+   - snake: http://mazko.github.io/MSP430.js/a492eba288cddc9309cbeb83900b0a21
+   - anime: http://mazko.github.io/MSP430.js/21e726e95d4509f26e42ef63420284e2
+
+1) java -Djava.awt.headless=true -cp mspsim.js.jar
 
 2) Remove -Djava.awt.headless=true to enable UART UI
+
+3) Enc28J60:
+  - Linux:
+      sudo ip tuntap add O_O mode tap user $USER && \ 
+      sudo ip addr add 10.0.0.1/24 dev O_O && \
+      sudo ip link set dev O_O up
+      java -cp mspsim.js.jar
+      # test http://mazko.github.io/MSP430.js/c82f4c8f550e96f0d9fb239333aab076
+      ping 10.0.0.42
+      # optionally analyze network traffic
+      sudo tshark -i O_O
+      # optionally cleanup
+      sudo ip tuntap delete O_O mode tap

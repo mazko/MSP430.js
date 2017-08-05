@@ -11,6 +11,34 @@ index 427ffe5..07f93a5 100644
  
  SOURCES := ${wildcard *.java $(addsuffix /*.java,$(PACKAGES))}
  
+diff --git a/se/sics/mspsim/core/MSP430.java b/se/sics/mspsim/core/MSP430.java
+index 15dc730..01e707a 100644
+--- a/se/sics/mspsim/core/MSP430.java
++++ b/se/sics/mspsim/core/MSP430.java
+@@ -50,8 +50,8 @@ public class MSP430 extends MSP430Core {
+   private int tracePos;
+   
+   private boolean debug = false;
+-  private boolean running = false;
+-  private boolean isBreaking = false;
++  volatile private boolean running = false;
++  volatile private boolean isBreaking = false;
+   private double rate = 2.0;
+ 
+   // Debug time - measure cycles
+diff --git a/se/sics/mspsim/core/MSP430Core.java b/se/sics/mspsim/core/MSP430Core.java
+index da7ed56..077c251 100644
+--- a/se/sics/mspsim/core/MSP430Core.java
++++ b/se/sics/mspsim/core/MSP430Core.java
+@@ -75,7 +75,7 @@ public class MSP430Core extends Chip implements MSP430Constants {
+   public final int memory[];
+   private final Flash flash;
+   boolean isFlashBusy;
+-  boolean isStopping = false;
++  volatile boolean isStopping = false;
+ 
+   private final Memory memorySegments[];
+   Memory currentSegment;
 diff --git a/se/sics/mspsim/emulink/EmuLink.java b/se/sics/mspsim/emulink/EmuLink.java
 index 155af60..9dd8155 100755
 --- a/se/sics/mspsim/emulink/EmuLink.java
@@ -361,12 +389,378 @@ index 0000000..5bbe995
 +    ok(false, msg);
 +  }
 +}
+diff --git a/se/sics/mspsim/platform/proiot3/Enc28J60.java b/se/sics/mspsim/platform/proiot3/Enc28J60.java
+new file mode 100644
+index 0000000..a68a9b5
+--- /dev/null
++++ b/se/sics/mspsim/platform/proiot3/Enc28J60.java
+@@ -0,0 +1,314 @@
++package se.sics.mspsim.platform.proiot3;
++
++import java.util.concurrent.ConcurrentLinkedDeque;
++import java.util.ArrayDeque;
++import java.util.Queue;
++
++import se.sics.mspsim.core.Chip;
++import se.sics.mspsim.core.MSP430Core;
++import se.sics.mspsim.core.USARTListener;
++import se.sics.mspsim.core.USARTSource;
++
++// previous: https://gist.github.com/e89c9f685988660ceb6114e3b7f2d6f0
++
++public class Enc28J60 extends Chip implements USARTListener {
++
++  // https://github.com/tom-seddon/fuse-emulator-code/blob/master/fuse/peripherals/nic/enc28j60.c
++
++  private enum SPI_STATE {
++    SPI_IDLE(-2),
++    SPI_CMD (-1),  /* expect a command byte */
++
++    SPI_RCR (0),   /* read command register */
++    SPI_RBM (1),   /* read buffer memory */
++    SPI_WCR (2),   /* write command register */
++    SPI_WBM (3),   /* write buffer memory */
++    SPI_BFS (4),   /* bit-field set */
++    SPI_BFC (5),   /* bit-field clear */
++    SPI_SRC (7);   /* system reset command */
++
++    private final int numVal;
++
++    SPI_STATE(int numVal) {
++        this.numVal = numVal;
++    }
++
++    public static SPI_STATE fromNum(int id) {
++      for (SPI_STATE type : SPI_STATE.values()) {
++        if (type.numVal == id) {
++            return type;
++        }
++      }
++      throw new IllegalArgumentException(id + " ?");
++    }
++  }
++
++
++  private enum REG {
++    ESTAT   (0, 0x1d),
++    ECON2   (0, 0x1e),
++    ECON1   (0, 0x1f),
++    EPKTCNT (1, 0x19);
++
++    private final int bank, addr;
++
++    REG(int bank, int addr) {
++      Assert.ok( (bank & 0x3) == bank, "bank ? " + bank);
++      Assert.ok( (addr & 0x1f) == addr, "addr ? " + addr);
++      this.bank = bank;
++      this.addr = addr;
++    }
++
++    public int getValue(int[][] registers) {
++      return registers[bank][addr];
++    }
++
++    public void setValue(int value, int[][] registers) {
++      Assert.ok( (value & 0xff) == value, " byte setValue ? " + value);
++      registers[bank][addr] = value;
++    }
++  }
++
++  // be careful, don't move this inside REG (reentrancy) 
++  private int[][] registers = new int[4][32];
++
++  private void regSetValue(REG reg, int value) {
++    reg.setValue(value, registers);
++  }
++
++  private int regGetValue(REG reg) {
++    return reg.getValue(registers);
++  }
++
++  private boolean regBitTest(REG reg, int bit) {
++    Assert.ok( bit < 8 && bit >= 0 , "bit ? " + bit);
++    return ( reg.getValue(registers) & (1 << bit) ) != 0;
++  }
++
++  private void regBitClr(REG reg, int bit) {
++    Assert.ok(regBitTest(reg, bit), reg + " regBitClr ?");
++    regSetValue( reg, regGetValue(reg) & ~(1 << bit) );
++    Assert.ok(!regBitTest(reg, bit), reg + " still set ? ");
++  }
++
++  private SPI_STATE spi_state;
++
++  int curr_register, curr_register_bank;
++
++  private boolean DEBUG = true;
++
++  // https://docs.oracle.com/javase/7/docs/api/java/util/ArrayDeque.html
++  // add(E) is equivalent to addLast(E)
++  // element() is equivalent to getFirst(). Retrieves, but does not remove
++  // remove() is equivalent to removeFirst()
++  private final Queue<Byte> wbmData = new ArrayDeque<>();
++
++  // https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ConcurrentLinkedDeque.html
++  // addLast(E) is equivalent to add(E)
++  // element() is equivalent to getFirst(). Retrieves, but does not remove
++  // remove() is equivalent to removeFirst()
++  private final Queue<Queue<Byte>> rbmPackets = new ConcurrentLinkedDeque<>();
++
++  private final Observable.Observer<byte[]> tapObserver;
++
++  public void chipSelect(boolean chipSelect) {
++    // log("CS: " + chipSelect);
++    if (chipSelect) {
++      spi_state = SPI_STATE.SPI_CMD;
++    } else {
++      spi_state = SPI_STATE.SPI_IDLE;
++    }
++  }
++
++  public Enc28J60(MSP430Core cpu) throws Exception {
++    super("Enc28J60", "Proiot Ethernet", cpu);
++    tapObserver = new Observable.Observer<byte[]>() {
++      @Override
++      public void update(byte[] data) {
++
++        Queue<Byte> packet = new ArrayDeque<>();
++        int len = data.length;
++
++        packet.add(new Byte((byte) 0x00)); /* ignored: next packet pointer */
++        packet.add(new Byte((byte) 0x00)); /* ignored: next packet pointer */
++
++        packet.add(new Byte((byte) (len & 0xff))); /* length */
++        packet.add(new Byte((byte) ((len >> 8) & 0xff))); /* length */
++
++        packet.add(new Byte((byte) 0x80)); /* statusL: success */
++        packet.add(new Byte((byte) 0x00)); /* statusM: ignored */
++
++        for (byte b : data) {
++          packet.add(new Byte(b)); /* data */
++        }
++        
++        // https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ConcurrentLinkedDeque.html
++        // Memory consistency effects: 
++        // As with other concurrent collections, actions in a thread prior to placing 
++        // an object into a ConcurrentLinkedDeque happen-before actions subsequent to 
++        // the access or removal of that element from the ConcurrentLinkedDeque in another thread.
++        rbmPackets.add(packet);
++
++        log("nr pending packets increased to: " + rbmPackets.size());
++      }
++    };
++    TunTap.getInstance().addObserver(tapObserver);
++  }
++
++  @Override
++  public void log(String msg) {
++    if (DEBUG) {
++      System.out.println("Enc28J60: " + msg);
++    }
++  }
++
++  private void perform_side_effects_for_write() {
++    final int ECON2_PKTDEC_BIT = 6;
++    final int ECON1_TXRTS_BIT  = 3;
++
++    /* PKTDEC: decrease EPKTCNT */
++    if ( regBitTest(REG.ECON2, ECON2_PKTDEC_BIT) ) {
++
++      regBitClr(REG.ECON2, ECON2_PKTDEC_BIT);
++
++      if (rbmPackets.isEmpty()) {
++        log("warning, ECON2_PKTDEC_BIT has no effect (rbm is empty)");
++      } else {
++        if (rbmPackets.element().size() == 0 || rbmPackets.element().size() == 4 /*throw out crc*/) {
++          log("nr pending packets decreased to: " + (rbmPackets.size() - 1));
++        } else {
++          log("warning, rbm packet consumed partially " + rbmPackets.element().size());
++        }
++        rbmPackets.remove();
++      }
++    }
++
++    /* TXRTS: transmission request */
++    if ( regBitTest(REG.ECON1, ECON1_TXRTS_BIT )) {
++      
++      regBitClr(REG.ECON1, ECON1_TXRTS_BIT);
++
++      if (wbmData.size() > 0) {
++        log("Transmitting packet, size: " + wbmData.size());
++        // ignore first non-Ethernet byte
++        // (ENC28J60 requires a single per packet control byte to precede the packet for transmission)
++        wbmData.remove(); 
++
++        Byte[] tmp = wbmData.toArray(new Byte[0]);
++        byte[] bytes = new byte[tmp.length];
++        for(int i = 0; i < bytes.length; i++) {
++          bytes[i] = tmp[i];
++        }
++
++        try {
++          TunTap.getInstance().write(bytes);
++        } catch (Exception ex) {
++          ex.printStackTrace();
++          Assert.fail("Tap write error");
++        }
++
++        wbmData.clear();
++      } else {
++        log("warning: nothing to transmit");
++      }
++    }
++  }
++
++  private int inputByte(final int data) {
++
++    switch (spi_state) {
++      case SPI_CMD:
++        spi_state = SPI_STATE.fromNum( (data >> 5) & 0x07 /* 0x07 is optcode */ );
++
++        if ( spi_state == SPI_STATE.SPI_SRC ) {
++          log("reset not implemented yet");
++          break;
++        }
++
++        // The Control Register memory is partitioned into four
++        // banks, selectable by the bank select bits
++        // BSEL1:BSEL0 in the ECON1 register. Each bank is
++        // 32 bytes long and addressed by a 5-bit address value.
++        // The last five locations (1Bh to 1Fh) of all banks point to a
++        // common set of registers: EIE, EIR, ESTAT, ECON2 and
++        // ECON1. These are key registers used in controlling and
++        // monitoring the operation of the device. Their common
++        // mapping allows easy access without switching the bank.
++
++        curr_register = (data & 0x1f /* 5-bit address value */);
++        curr_register_bank = (curr_register >= 0x1b) ? 0 : (regGetValue(REG.ECON1) & 0x03 /* 0x03 is BSEL1:BSEL0 */);
++        // log("reg: 0x" + Integer.toHexString(curr_register) + ", bank: " + curr_register_bank + ", optcode " + spi_state);
++        break;
++
++      case SPI_WCR:
++        // log("reg: 0x" + Integer.toHexString(curr_register) + ", bank: " + curr_register_bank + ", data " + data + ", optcode " + spi_state);
++        registers[ curr_register_bank ][ curr_register ] = data;
++        perform_side_effects_for_write();
++        break;
++
++      case SPI_WBM:
++        /* Assume ECON2:AUTOINC to be set */
++        wbmData.add(new Byte((byte) data));
++        break;
++
++      case SPI_BFS:
++        // log("reg: 0x" + Integer.toHexString(curr_register) + ", bank: " + curr_register_bank + ", data " + data + ", optcode " + spi_state);
++        registers[ curr_register_bank ][ curr_register ] |= data;
++        perform_side_effects_for_write();
++        break;
++
++      case SPI_BFC:
++        // log("reg: 0x" + Integer.toHexString(curr_register) + ", bank: " + curr_register_bank + ", data " + data + ", optcode " + spi_state);
++        registers[ curr_register_bank ][ curr_register ] &= ~data;
++        // perform_side_effects_for_write();
++        break;
++
++      case SPI_RCR:
++        regSetValue(REG.EPKTCNT, rbmPackets.size());
++        regSetValue(REG.ESTAT, 0x01 /* chip is always ready CLKRDY is set */); 
++        return registers[ curr_register_bank ][ curr_register ];
++
++      case SPI_RBM:
++        /* Assume ECON2:AUTOINC to be set */
++        if (rbmPackets.size() > 0) {
++          if (rbmPackets.element().isEmpty()) {
++            log("warning, rbm packet data is already consumed, returning 0");
++          } else {
++            // TODO: 0xff ?
++            return rbmPackets.element().remove() & 0xff;
++          }
++        } else {
++          log("warning, no packet in rbm, returning 0");
++        }
++        break;
++
++      default:
++        Assert.fail("spi_state ? " + spi_state);
++        break;
++    }
++
++    return 0;
++  }
++
++  public int getConfiguration(int parameter) {
++    return -1;
++  }
++
++  public int getModeMax() {
++    return -1;
++  }
++
++  @Override
++  public void dataReceived(USARTSource source, int spiIn) {
++    Assert.ok( (spiIn & 0xff) == spiIn, " byte spiIn ? " + spiIn);
++    int spiOut = inputByte(spiIn);
++    Assert.ok( (spiOut & 0xff) == spiOut, " byte spiOut ? " + spiOut);
++    source.byteReceived(spiOut);
++    // log("Enc28J60 spiIn: 0x" + Integer.toHexString(spiIn) + ", spiOut 0x" + Integer.toHexString(spiOut));
++  }
++
++  public void close() {
++    TunTap.getInstance().removeObserver(tapObserver);
++  }
++
++}
+diff --git a/se/sics/mspsim/platform/proiot3/Observable.java b/se/sics/mspsim/platform/proiot3/Observable.java
+new file mode 100644
+index 0000000..2bdc619
+--- /dev/null
++++ b/se/sics/mspsim/platform/proiot3/Observable.java
+@@ -0,0 +1,39 @@
++package se.sics.mspsim.platform.proiot3;
++
++import java.util.concurrent.CopyOnWriteArrayList;
++
++
++public class Observable<ObservedType> {
++
++    public interface Observer<ObservedType> {
++        void update(ObservedType data);
++    }
++
++    private final CopyOnWriteArrayList<Observer<ObservedType>> _observers = new CopyOnWriteArrayList<Observer<ObservedType>>();
++
++    public void addObserver(Observer<ObservedType> obs) {
++        if (obs == null) {
++            throw new IllegalArgumentException("Tried to add a null observer");
++        }
++        if (_observers.contains(obs)) {
++            throw new IllegalArgumentException("Observer subscribed already");
++        }
++        _observers.add(obs);
++    }
++
++    public void removeObserver(Observer<ObservedType> obs) {
++        if (obs == null) {
++            throw new IllegalArgumentException("Tried to remove a null observer");
++        }
++        if (!_observers.contains(obs)) {
++            throw new IllegalArgumentException("No such Observer");
++        }
++        _observers.remove(obs);
++    }
++
++    protected void notifyObservers(ObservedType data) {
++        for (Observer<ObservedType> obs : _observers) {
++            obs.update(data);
++        }
++    }
++}
+\ No newline at end of file
 diff --git a/se/sics/mspsim/platform/proiot3/Proiot3Node.java b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
 new file mode 100644
-index 0000000..051cf3d
+index 0000000..5e1b7be
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,260 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import se.sics.mspsim.core.MSP430Constants;
@@ -374,6 +768,8 @@ index 0000000..051cf3d
 +import se.sics.mspsim.core.IOPort;
 +import se.sics.mspsim.core.IOUnit;
 +import se.sics.mspsim.core.PortListener;
++import se.sics.mspsim.core.SimEvent;
++import se.sics.mspsim.core.SimEventListener;
 +import se.sics.mspsim.platform.IProiotNode;
 +import se.sics.mspsim.platform.GenericNode;
 +import se.sics.mspsim.emulink.IEmuLinkWriter;
@@ -386,6 +782,8 @@ index 0000000..051cf3d
 +
 +import org.json.simple.JSONObject;
 +
++import com.sun.jna.LastErrorException;
++
 +
 +public class Proiot3Node extends GenericNode implements IProiotNode {
 +
@@ -396,6 +794,8 @@ index 0000000..051cf3d
 +  // http://docs.oracle.com/javase/specs/jls/se7/html/jls-4.html#jls-4.12.5
 +  // For all reference types (§4.3), the default value is null
 +  private SerialMon serialMon;
++
++  private Enc28J60 enc28J60;
 +
 +  @Override
 +  public void setEmuLink(IEmuLinkWriter emulink) {
@@ -419,7 +819,49 @@ index 0000000..051cf3d
 +  public Proiot3Node() {
 +    super("ProiotNode", new MSP430f1611Config());
 +
++    try {
++      enc28J60 = new Enc28J60(cpu);
++    } catch (LastErrorException ex) {
++      System.out.println("Enc28J60 disabled -> " + ex);
++    } catch (Exception ex) {
++      ex.printStackTrace();
++    }
++
++    // see autorun.sc
++    if (!GraphicsEnvironment.isHeadless()) {
++      // Add some windows for listening to serial output
++      USART usart = cpu.getIOUnit(USART.class, "USART0");
++      Assert.ok(usart != null, "ProiotNode: USART0 ?");
++      // see autorun.sc
++      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
++    }
++
 +    setupNode();
++
++    cpu.addSimEventListener(new SimEventListener() {
++      @Override
++        public void simChanged(SimEvent event) {
++          switch (event.getType()) {
++            case START:
++              if (serialMon != null) {
++                serialMon.start();  
++              }
++              break;
++
++            case STOP:
++              System.out.println("ProiotNode: stopped " + cpu.info());
++
++              if (serialMon != null) {
++                serialMon.stop();
++              }
++
++              if (enc28J60 != null) {
++                enc28J60.close();
++              }
++              break;
++            }
++        }
++    });
 +
 +    System.out.println("ProiotNode: created, MSPSim " + MSP430Constants.VERSION);
 +
@@ -526,10 +968,40 @@ index 0000000..051cf3d
 +    };
 +  }
 +
++  void setupP5() {
++    if (enc28J60 != null) {
++      USART usart = cpu.getIOUnit(USART.class, "USART1");
++      Assert.ok(usart != null, "ProiotNode: USART1 ?");
++      usart.addUSARTListener(enc28J60);
++    }
++
++    final int LEDS_MASK = enc28J60 == null ? 0xFF : 0b11110000;
++    final int CHIP_SELECT_MASK = 1;
++    final IOPort port = cpu.getIOUnit(IOPort.class, "P5");
++    port.addPortListener(new PortListener() {
++
++        private int portLastValue;
++
++        public void portWrite(final IOPort source, final int data) {
++          Assert.ok(port == source, "ProiotNode: port != source");          
++
++          if ((portLastValue & LEDS_MASK) != (data & LEDS_MASK)) {
++            doEventPort(source, (data & LEDS_MASK));
++          }
++
++          if (enc28J60 != null && (portLastValue & CHIP_SELECT_MASK) != (data & CHIP_SELECT_MASK)) {
++            enc28J60.chipSelect((data & CHIP_SELECT_MASK) == 0);
++          }
++
++          portLastValue = data;
++        }
++    });
++  }
++
 +  private void setupNodePorts() {
 +    setupP2P3();
 +    portSubscribe("P4");
-+    portSubscribe("P5");
++    setupP5();
 +    portSubscribe("P6");
 +
 +    final IOPort port1 = cpu.getIOUnit(IOPort.class, "P1");
@@ -538,20 +1010,9 @@ index 0000000..051cf3d
 +    }
 +  }
 +
-+  // see autorun.sc
-+  private void setupUART() {
-+    // Add some windows for listening to serial output
-+    USART usart = cpu.getIOUnit(USART.class, "USART0");
-+    Assert.ok(usart != null, "ProiotNode: USART0 ?");
-+    if (!GraphicsEnvironment.isHeadless()) {
-+      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
-+    }
-+  }
-+
 +  @Override
 +  public void setupNode() {
 +    setupNodePorts();
-+    setupUART();
 +  }
 +
 +  @Override
@@ -559,27 +1020,235 @@ index 0000000..051cf3d
 +    return 0;
 +  }
 +
-+  @Override
-+  public void start() {
-+    if (serialMon != null) {
-+      serialMon.start();  
++}
+diff --git a/se/sics/mspsim/platform/proiot3/TunTap.java b/se/sics/mspsim/platform/proiot3/TunTap.java
+new file mode 100644
+index 0000000..76a6de6
+--- /dev/null
++++ b/se/sics/mspsim/platform/proiot3/TunTap.java
+@@ -0,0 +1,221 @@
++package se.sics.mspsim.platform.proiot3;
++
++import com.sun.jna.Platform;
++import com.sun.jna.Library;
++import com.sun.jna.Native;
++import com.sun.jna.Structure;
++import com.sun.jna.LastErrorException;
++
++import java.util.Arrays;
++import java.util.List;
++import java.lang.AutoCloseable;
++
++
++// javac -XDenableSunApiLintControl -cp jna-4.4.0.jar:. Test.java && sudo java -cp jna-4.4.0.jar:. Test
++// test -> sudo ip addr add 10.0.0.1/24 dev O_O && sudo ip link set dev O_O up && ping 10.0.0.42
++// or without sudo
++// sudo ip tuntap add O_O mode tap user $USER
++// javac -XDenableSunApiLintControl -cp jna-4.4.0.jar:. Test.java && java -cp jna-4.4.0.jar:. Test
++// test
++// sudo ip tuntap delete O_O mode tap
++
++// https://github.com/java-native-access/jna/blob/master/www/GettingStarted.md
++
++interface CLibrary extends Library {
++
++    final CLibrary INSTANCE = (CLibrary)Native.loadLibrary(Platform.C_LIBRARY_NAME, CLibrary.class);
++
++    int ioctl(int fd, int cmd, ifReq p) throws LastErrorException;
++
++    // https://github.com/songgao/water/blob/master/syscalls_linux.go
++    // https://github.com/java-native-access/jna/blob/master/test/com/sun/jna/StructureTest.java
++
++    public static class ifReq extends Structure {
++        
++        public ifReq (String name, short flags) {
++            // ASSERT: System.out.println(name.getBytes().length + " == " + name.length());
++            System.arraycopy(name.getBytes(), 0, this.Name, 0, name.length());
++            this.Flags = flags;
++        }
++
++         public byte[] Name = new byte[0x10];
++         public short Flags;
++         public byte[] pad = new byte[0x28 - 0x10 - 2];
++
++        @Override
++        protected List<String> getFieldOrder() { 
++            return Arrays.asList(new String[] { 
++                "Name", "Flags", "pad",
++            });
++        }
 +    }
 +
-+    super.start();
-+  }
++    // RandomAccessFile + JNA alternative
++    // https://gist.github.com/c65d56eb9af48df42899053c6b13b62f
 +
-+  @Override
-+  public void stop() {
-+    System.out.println("ProiotNode: stopped " + cpu.info());
-+    super.stop();
++    /**
++     * Open and possibly create a file or device.
++     * 
++     * @param path file path
++     * @param oflag file status flags and file access modes
++     * @return new file descriptor, or -1 if an error occurred
++     * @throws LastErrorException exception representing a non-zero
++     *             error code returned in errno
++     */
++    int open(String path, int oflag) throws LastErrorException;
 +
-+    if (serialMon != null) {
-+      serialMon.stop();
-+    }
++    /**
++     * Closes a file descriptor, so that it no longer refers to any
++     * file and may be reused.
++     * 
++     * @param fd file descriptor for already opened file
++     * @return zero on success, otherwise -1
++     * @throws LastErrorException exception representing a non-zero
++     *             error code returned in errno
++     */
++    int close(int fd) throws LastErrorException;
 +
-+  }
++    /**
++     * Read up to <code>count</code> bytes from file descriptor
++     * <code>fd</code> into the buffer starting at <code>buf</code>.
++     * 
++     * @param fd file descriptor of file to read from
++     * @param buf the address of buffer to read to
++     * @param count number of bytes to read
++     * @return number of read bytes on success, otherwise -1
++     * @throws LastErrorException exception representing a non-zero
++     *             error code returned in errno
++     */
++    int read(int fd, byte[] buffer, int count) throws LastErrorException;
++
++    int write(int fd, byte[] buffer, int len) throws LastErrorException;
 +
 +}
++
++interface ITunTap extends AutoCloseable {
++    int read(byte[] buffer);
++    void write(byte[] buffer);
++}
++
++public final class TunTap extends Observable<byte[]> {
++
++    private static volatile TunTap instance;
++
++    // https://habrahabr.ru/post/129494/
++
++    public static TunTap getInstance() {
++        TunTap localInstance = instance;
++        if (localInstance == null) {
++            synchronized (TunTap.class) {
++                localInstance = instance;
++                if (localInstance == null) {
++                    instance = localInstance = new TunTap();
++                }
++            }
++        }
++        return localInstance;
++    }
++
++    final static String TAP_NAME = "O_O";
++    final private ITunTap tap = Platform.isWindows() 
++        ? TunTapImpl.getWinTap(TAP_NAME) 
++        : TunTapImpl.getLinuxTap(TAP_NAME);
++
++    private TunTap() {
++
++        // http://gee.cs.oswego.edu/dl/cpj/jmm.html
++        // Among other consequences, it is bad practice to make available the reference 
++        // to an incompletely constructed object (see §2.1.2). It can also be risky to 
++        // start new threads inside a constructor, especially in a class that may be subclassed. 
++        // Thread.start has the same memory effects as a lock release by the thread calling start, 
++        // followed by a lock acquire by the started thread. If a Runnable superclass invokes 
++        // new Thread(this).start() before subclass constructors execute, then the object might 
++        // not be fully initialized when the run method executes. Similarly, if you create and start
++        // a new thread T and then create an object X used by thread T, you cannot be sure that the 
++        // fields of X will be visible to T unless you employ synchronization surrounding all 
++        // references to object X. Or, when applicable, you can create X before starting T.
++
++        new Thread() {
++            @Override
++            public void run() {
++                try {
++                    while (true) {
++                        final byte[] frame = new byte[1500];
++                        if (tap.read(frame) > 0) {
++                          notifyObservers(frame);
++                        } else {
++                          Assert.fail("Tap read error ( <= 0 )");
++                        }
++                    }
++                } catch (Exception ex) {
++                    ex.printStackTrace();
++                    Assert.fail("TunTap read thread error");
++                }
++            }
++        }.start();
++    }
++
++    private final Object writeLock = new Object();
++
++    public void write(byte[] buffer) {
++        synchronized(writeLock) {
++            tap.write(buffer);
++        }
++    }
++}
++
++class TunTapImpl {
++
++    // https://github.com/songgao/water/blob/master/syscalls_linux.go
++
++    static ITunTap getLinuxTap(String name) {
++
++        final int O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2;
++
++        // https://stackoverflow.com/questions/41056322/how-to-dispose-library-loaded-with-jna
++        final CLibrary INSTANCE = CLibrary.INSTANCE;
++
++        final int fd = INSTANCE.open("/dev/net/tun", O_RDWR);
++
++        final int TUNSETIFF    = 0x400454ca;
++        final short cIFF_TUN   = 0x0001;
++        final short cIFF_TAP   = 0x0002;
++        final short cIFF_NO_PI = 0x1000;
++
++        CLibrary.ifReq ifReq = new CLibrary.ifReq(name, (short) (cIFF_TAP | cIFF_NO_PI));
++        INSTANCE.ioctl(fd, TUNSETIFF, ifReq);
++
++        return new ITunTap() {
++            public int read(byte[] buffer) {
++                return INSTANCE.read(fd, buffer, buffer.length);
++            }
++
++            public void write(byte[] buffer) {
++                Assert.ok(INSTANCE.write(fd, buffer, buffer.length) == buffer.length, "write ?");
++            }
++
++            public void close() {
++                INSTANCE.close(fd);
++            }
++        };
++    }
++
++    // https://github.com/songgao/water/blob/master/syscalls_windows.go
++
++    static ITunTap getWinTap(String name) {
++        throw new UnsupportedOperationException("TODO: Windows not supported yet");
++    }
++
++    // https://github.com/songgao/water/blob/master/syscalls_linux.go
++
++    public static void main(String args[]) throws Exception {
++
++        try (ITunTap tap = getLinuxTap("O_O")) {
++            byte[] frame = new byte[1500];
++
++            while (tap.read(frame) > 0) {
++                System.out.println(Arrays.toString(frame));
++            }
++        } 
++    }
++}
+\ No newline at end of file
 diff --git a/se/sics/mspsim/platform/proiot4/Assert.java b/se/sics/mspsim/platform/proiot4/Assert.java
 new file mode 100644
 index 0000000..8d31a57
@@ -606,10 +1275,10 @@ index 0000000..8d31a57
 +}
 diff --git a/se/sics/mspsim/platform/proiot4/Proiot4Node.java b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
 new file mode 100644
-index 0000000..fc035f3
+index 0000000..65f95cd
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,163 @@
 +package se.sics.mspsim.platform.proiot4;
 +
 +import se.sics.mspsim.core.MSP430Constants;
@@ -617,6 +1286,8 @@ index 0000000..fc035f3
 +import se.sics.mspsim.core.IOPort;
 +import se.sics.mspsim.core.IOUnit;
 +import se.sics.mspsim.core.PortListener;
++import se.sics.mspsim.core.SimEvent;
++import se.sics.mspsim.core.SimEventListener;
 +import se.sics.mspsim.platform.IProiotNode;
 +import se.sics.mspsim.platform.GenericNode;
 +import se.sics.mspsim.emulink.IEmuLinkWriter;
@@ -650,7 +1321,38 @@ index 0000000..fc035f3
 +  public Proiot4Node() {
 +    super("ProiotNode", new MSP430f1611Config());
 +
++    // see autorun.sc
++    if (!GraphicsEnvironment.isHeadless()) {
++      // Add some windows for listening to serial output
++      USART usart = cpu.getIOUnit(USART.class, "USART0");
++      Assert.ok(usart != null, "ProiotNode: USART0 ?");
++      // see autorun.sc
++      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
++    }
++
 +    setupNode();
++
++    cpu.addSimEventListener(new SimEventListener() {
++      @Override
++        public void simChanged(SimEvent event) {
++          switch (event.getType()) {
++            case START:
++              if (serialMon != null) {
++                serialMon.start();  
++              }
++              break;
++
++            case STOP:
++              System.out.println("ProiotNode: stopped " + cpu.info());
++
++              if (serialMon != null) {
++                serialMon.stop();
++              }
++
++              break;
++            }
++        }
++    });
 +
 +    System.out.println("ProiotNode: created, MSPSim " + MSP430Constants.VERSION);
 +
@@ -729,45 +1431,14 @@ index 0000000..fc035f3
 +    portSubscribe("P6");
 +  }
 +
-+  // see autorun.sc
-+  private void setupUART() {
-+    // Add some windows for listening to serial output
-+    USART usart = cpu.getIOUnit(USART.class, "USART0");
-+    Assert.ok(usart != null, "ProiotNode: USART0 ?");
-+    if (!GraphicsEnvironment.isHeadless()) {
-+      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
-+    }
-+  }
-+
 +  @Override
 +  public void setupNode() {
 +    setupNodePorts();
-+    setupUART();
 +  }
 +
 +  @Override
 +  public int getModeMax() {
 +    return 0;
-+  }
-+
-+  @Override
-+  public void start() {
-+    if (serialMon != null) {
-+      serialMon.start();  
-+    }
-+
-+    super.start();
-+  }
-+
-+  @Override
-+  public void stop() {
-+    System.out.println("ProiotNode: stopped " + cpu.info());
-+    super.stop();
-+
-+    if (serialMon != null) {
-+      serialMon.stop();
-+    }
-+
 +  }
 +
 +}
