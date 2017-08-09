@@ -1,20 +1,31 @@
-0) Examples:
-   - snake: http://mazko.github.io/MSP430.js/a492eba288cddc9309cbeb83900b0a21
-   - anime: http://mazko.github.io/MSP430.js/21e726e95d4509f26e42ef63420284e2
-
-1) java -Djava.awt.headless=true -cp mspsim.js.jar
+1) java -Djava.awt.headless=true -cp mspsim.js.jar se.sics.mspsim.emulink.WSEmuLink
 
 2) Remove -Djava.awt.headless=true to enable UART UI
 
-3) Enc28J60:
-  - Linux:
-      sudo ip tuntap add O_O mode tap user $USER && \ 
-      sudo ip addr add 10.0.0.1/24 dev O_O && \
-      sudo ip link set dev O_O up
-      java -cp mspsim.js.jar
-      # test http://mazko.github.io/MSP430.js/c82f4c8f550e96f0d9fb239333aab076
+3) Examples for 1) or 2):
+   - anime: http://mazko.github.io/MSP430.js/21e726e95d4509f26e42ef63420284e2
+   - snake: http://mazko.github.io/MSP430.js/a492eba288cddc9309cbeb83900b0a21
+
+4) Configure virtual network (you can change 10.0.0.1):
+
+   - Linux:
+      sudo ip tuntap add mazko mode tap user $USER && \
+      sudo ip addr add 10.0.0.1/24 dev mazko && \
+      sudo ip link set dev mazko up
+      # sudo tshark -i mazko
+      # sudo ip tuntap delete mazko mode tap
+
+   - Windows:
+      # install Tap-windows driver from OpenVPN site
+      # Start -> Control Panel -> Network Connections then rename "TAP-Windows Adapter" to mazko
+      netsh interface ip set address mazko static 10.0.0.1 255.255.255.0
+
+5) Quick test for virtual network (you'll see output containing the ICMP frame)
+      java -cp mspsim.js.jar se.sics.mspsim.platform.proiot3.TunTapImpl
+      ping 10.0.0.255
+
+6) Enc28J60 test:
+      # Configure virtual network
+      # launch mspsim.js.jar 1) or 2)
+      # open in browser http://mazko.github.io/MSP430.js/c82f4c8f550e96f0d9fb239333aab076
       ping 10.0.0.42
-      # optionally analyze network traffic
-      sudo tshark -i O_O
-      # optionally cleanup
-      sudo ip tuntap delete O_O mode tap

@@ -89,7 +89,9 @@ cp /tmp/pom-$$/target/lib/* lib/
 patch -p1 < ../proiot.patch
 git add .
 
-wget http://central.maven.org/maven2/net/java/dev/jna/jna/4.4.0/jna-4.4.0.jar --directory-prefix=./lib/
+wget --directory-prefix=./lib/ \
+     http://repo1.maven.org/maven2/net/java/dev/jna/jna/4.4.0/jna-4.4.0.jar \
+     http://repo1.maven.org/maven2/net/java/dev/jna/jna-platform/4.4.0/jna-platform-4.4.0.jar
 
 docker run -it --rm -w='/home/src/'            \
   -e JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF8'  \

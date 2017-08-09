@@ -391,10 +391,10 @@ index 0000000..5bbe995
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/Enc28J60.java b/se/sics/mspsim/platform/proiot3/Enc28J60.java
 new file mode 100644
-index 0000000..a68a9b5
+index 0000000..3742b2d
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Enc28J60.java
-@@ -0,0 +1,314 @@
+@@ -0,0 +1,331 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import java.util.concurrent.ConcurrentLinkedDeque;
@@ -522,29 +522,39 @@ index 0000000..a68a9b5
 +    tapObserver = new Observable.Observer<byte[]>() {
 +      @Override
 +      public void update(byte[] data) {
-+
++        final int CRC_LEN = 4;
++        final int len = data.length + CRC_LEN;
 +        Queue<Byte> packet = new ArrayDeque<>();
-+        int len = data.length;
 +
 +        packet.add(new Byte((byte) 0x00)); /* ignored: next packet pointer */
 +        packet.add(new Byte((byte) 0x00)); /* ignored: next packet pointer */
 +
-+        packet.add(new Byte((byte) (len & 0xff))); /* length */
-+        packet.add(new Byte((byte) ((len >> 8) & 0xff))); /* length */
++        // 39662a.pdf FIGURE 7-3. Received Byte Count.
++        // Indicates length of the received frame. This includes the destination
++        // address, source address, type/length, data, padding and CRC fields. This
++        // field is stored in little-endian format.
++        packet.add(new Byte((byte) (len & 0xff))); /* status[7:0] Received Byte Count */
++        packet.add(new Byte((byte) ((len >> 8) & 0xff))); /* status[15:8] Received Byte Count */
 +
-+        packet.add(new Byte((byte) 0x80)); /* statusL: success */
-+        packet.add(new Byte((byte) 0x00)); /* statusM: ignored */
++        packet.add(new Byte((byte) 0x80)); /* status[23:16]: success (1 << 23) */
++        packet.add(new Byte((byte) 0x00)); /* status[31:24]: ignored */
 +
 +        for (byte b : data) {
 +          packet.add(new Byte(b)); /* data */
 +        }
-+        
++
++        for (int i = 0; i < CRC_LEN; i++) {
++          packet.add(new Byte((byte) 0x00)); /* ignore crc */
++        }
++
 +        // https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ConcurrentLinkedDeque.html
 +        // Memory consistency effects: 
 +        // As with other concurrent collections, actions in a thread prior to placing 
 +        // an object into a ConcurrentLinkedDeque happen-before actions subsequent to 
 +        // the access or removal of that element from the ConcurrentLinkedDeque in another thread.
 +        rbmPackets.add(packet);
++
++        Assert.ok(len == packet.size() - 6 /* next packet pointer + status */, "Received Byte Count");
 +
 +        log("nr pending packets increased to: " + rbmPackets.size());
 +      }
@@ -697,6 +707,13 @@ index 0000000..a68a9b5
 +
 +  @Override
 +  public void dataReceived(USARTSource source, int spiIn) {
++
++    // test int -> byte -> int
++    // for (int i = 0; i <= 0xff; i++) {
++    //   byte j = (byte)i;
++    //   Assert.ok( (0xff & j) == i, " ? i " + i + " j " + j);
++    // }
++
 +    Assert.ok( (spiIn & 0xff) == spiIn, " byte spiIn ? " + spiIn);
 +    int spiOut = inputByte(spiIn);
 +    Assert.ok( (spiOut & 0xff) == spiOut, " byte spiOut ? " + spiOut);
@@ -1023,10 +1040,10 @@ index 0000000..5e1b7be
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/TunTap.java b/se/sics/mspsim/platform/proiot3/TunTap.java
 new file mode 100644
-index 0000000..76a6de6
+index 0000000..877b9cd
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/TunTap.java
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,430 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import com.sun.jna.Platform;
@@ -1035,18 +1052,21 @@ index 0000000..76a6de6
 +import com.sun.jna.Structure;
 +import com.sun.jna.LastErrorException;
 +
++// windows (jna-platform-*.jar)
++import com.sun.jna.platform.win32.Advapi32Util;
++import com.sun.jna.platform.win32.WinReg;
++import com.sun.jna.platform.win32.WinError;
++import com.sun.jna.platform.win32.WinNT;
++import com.sun.jna.platform.win32.WinioctlUtil;
++import com.sun.jna.platform.win32.Winioctl;
++import com.sun.jna.platform.win32.Win32Exception;
++import com.sun.jna.ptr.IntByReference;
++import com.sun.jna.Memory;
++
 +import java.util.Arrays;
 +import java.util.List;
 +import java.lang.AutoCloseable;
 +
-+
-+// javac -XDenableSunApiLintControl -cp jna-4.4.0.jar:. Test.java && sudo java -cp jna-4.4.0.jar:. Test
-+// test -> sudo ip addr add 10.0.0.1/24 dev O_O && sudo ip link set dev O_O up && ping 10.0.0.42
-+// or without sudo
-+// sudo ip tuntap add O_O mode tap user $USER
-+// javac -XDenableSunApiLintControl -cp jna-4.4.0.jar:. Test.java && java -cp jna-4.4.0.jar:. Test
-+// test
-+// sudo ip tuntap delete O_O mode tap
 +
 +// https://github.com/java-native-access/jna/blob/master/www/GettingStarted.md
 +
@@ -1060,7 +1080,7 @@ index 0000000..76a6de6
 +    // https://github.com/java-native-access/jna/blob/master/test/com/sun/jna/StructureTest.java
 +
 +    public static class ifReq extends Structure {
-+        
++
 +        public ifReq (String name, short flags) {
 +            // ASSERT: System.out.println(name.getBytes().length + " == " + name.length());
 +            System.arraycopy(name.getBytes(), 0, this.Name, 0, name.length());
@@ -1123,7 +1143,7 @@ index 0000000..76a6de6
 +
 +interface ITunTap extends AutoCloseable {
 +    int read(byte[] buffer);
-+    void write(byte[] buffer);
++    int write(byte[] buffer);
 +}
 +
 +public final class TunTap extends Observable<byte[]> {
@@ -1145,10 +1165,7 @@ index 0000000..76a6de6
 +        return localInstance;
 +    }
 +
-+    final static String TAP_NAME = "O_O";
-+    final private ITunTap tap = Platform.isWindows() 
-+        ? TunTapImpl.getWinTap(TAP_NAME) 
-+        : TunTapImpl.getLinuxTap(TAP_NAME);
++    final private ITunTap tap = TunTapImpl.getTap();
 +
 +    private TunTap() {
 +
@@ -1169,9 +1186,12 @@ index 0000000..76a6de6
 +            public void run() {
 +                try {
 +                    while (true) {
-+                        final byte[] frame = new byte[1500];
-+                        if (tap.read(frame) > 0) {
-+                          notifyObservers(frame);
++                        final byte[] frame = new byte[1500 /* MTU */];
++                        final int num = tap.read(frame);
++                        if (num > 0) {
++                          // https://stackoverflow.com/a/2591592
++                          // http://grepcode.com/file/repository.grepcode.com/java/root/jdk/openjdk/6-b14/java/util/Arrays.java
++                          notifyObservers(Arrays.copyOf(frame, num));
 +                        } else {
 +                          Assert.fail("Tap read error ( <= 0 )");
 +                        }
@@ -1188,16 +1208,22 @@ index 0000000..76a6de6
 +
 +    public void write(byte[] buffer) {
 +        synchronized(writeLock) {
-+            tap.write(buffer);
++            Assert.ok(tap.write(buffer) == buffer.length, "write ?");
 +        }
 +    }
 +}
 +
 +class TunTapImpl {
 +
++    static ITunTap getTap() {
++      return Platform.isWindows() ? getWinTap() : Platform.isMac() ? getMacTap() : getLinuxTap();
++    }
++
 +    // https://github.com/songgao/water/blob/master/syscalls_linux.go
 +
-+    static ITunTap getLinuxTap(String name) {
++    private static ITunTap getLinuxTap() {
++
++        final String TAP_NAME = "mazko";
 +
 +        final int O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2;
 +
@@ -1211,39 +1237,239 @@ index 0000000..76a6de6
 +        final short cIFF_TAP   = 0x0002;
 +        final short cIFF_NO_PI = 0x1000;
 +
-+        CLibrary.ifReq ifReq = new CLibrary.ifReq(name, (short) (cIFF_TAP | cIFF_NO_PI));
++        CLibrary.ifReq ifReq = new CLibrary.ifReq(TAP_NAME, (short) (cIFF_TAP | cIFF_NO_PI));
 +        INSTANCE.ioctl(fd, TUNSETIFF, ifReq);
 +
 +        return new ITunTap() {
++            @Override
 +            public int read(byte[] buffer) {
 +                return INSTANCE.read(fd, buffer, buffer.length);
 +            }
 +
-+            public void write(byte[] buffer) {
-+                Assert.ok(INSTANCE.write(fd, buffer, buffer.length) == buffer.length, "write ?");
++            @Override
++            public int write(byte[] buffer) {
++                return INSTANCE.write(fd, buffer, buffer.length);
 +            }
 +
++            @Override
 +            public void close() {
 +                INSTANCE.close(fd);
 +            }
 +        };
 +    }
 +
-+    // https://github.com/songgao/water/blob/master/syscalls_windows.go
++    // (NDIS 5) https://gist.github.com/glacjay/586892
++    // (NDIS 6) https://github.com/songgao/water/blob/master/syscalls_windows.go
 +
-+    static ITunTap getWinTap(String name) {
-+        throw new UnsupportedOperationException("TODO: Windows not supported yet");
++    interface Kernel32 extends com.sun.jna.platform.win32.Kernel32 {
++      Kernel32 INSTANCE = (Kernel32)Native.loadLibrary("kernel32", Kernel32.class, com.sun.jna.win32.W32APIOptions.DEFAULT_OPTIONS);
++
++        // this methods not included in JNA 4.4.0 Kernel32
++
++        boolean GetOverlappedResult(
++            WinNT.HANDLE hFile,
++            WinNT.OVERLAPPED lpOverlapped,
++            IntByReference lpNumberOfBytesTransferred,
++            boolean wait);
++
++        boolean ReadFile(
++            WinNT.HANDLE hFile,
++            Memory pointer,
++            int nNumberOfBytesToRead,
++            IntByReference lpNumberOfBytesRead,
++            WinNT.OVERLAPPED lpOverlapped);
++
++        boolean WriteFile(
++            WinNT.HANDLE hFile,
++            Memory pointer,
++            int nNumberOfBytesToWrite,
++            IntByReference lpNumberOfBytesWritten,
++            WinNT.OVERLAPPED lpOverlapped);
 +    }
 +
-+    // https://github.com/songgao/water/blob/master/syscalls_linux.go
++    private static ITunTap getWinTap() {
++
++        final String REG_KEY = "SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}";
++
++        return new ITunTap() {
++
++            final Kernel32 api = Kernel32.INSTANCE;
++
++            private String getDeviceGuid() {
++              for (String s: Advapi32Util.registryGetKeys(WinReg.HKEY_LOCAL_MACHINE, REG_KEY)) {
++                  try {
++                      String k2 = REG_KEY + "\\" + s;
++                      if (Advapi32Util.registryGetStringValue(WinReg.HKEY_LOCAL_MACHINE, k2, "ComponentId").equals("tap0901")) {
++                          return Advapi32Util.registryGetStringValue(WinReg.HKEY_LOCAL_MACHINE, k2, "NetCfgInstanceId");
++                      }
++                  } catch (Exception ex) {
++                      // System.err.println("registryGetStringValue ? " + s);
++                      // ex.printStackTrace();
++                  }
++              }
++
++              throw new UnsupportedOperationException("GUID not found");
++            }
++
++            private int tap_control_code(int request, int method) {
++              return WinioctlUtil.CTL_CODE(Winioctl.FILE_DEVICE_UNKNOWN, request, method, 0);
++            }
++
++            // setStatus is used to bring up or bring down the interface
++            private void setStatus(boolean status, WinNT.HANDLE hFile) {
++
++              final int TAP_IOCTL_SET_MEDIA_STATUS = tap_control_code(6, 0);
++
++              IntByReference lpBytesReturned = new IntByReference(), 
++                             lpInBuffer = new IntByReference(status ? 1 : 0);
++
++              // https://golang.org/src/syscall/ztypes_windows.go
++              final int MAXIMUM_REPARSE_DATA_BUFFER_SIZE = 16 * 1024;
++              Memory readBuffer = new Memory(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
++
++              if(!api.DeviceIoControl(hFile,
++                  TAP_IOCTL_SET_MEDIA_STATUS,
++                  lpInBuffer.getPointer(),
++                  4,
++                  readBuffer,
++                  MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
++                  lpBytesReturned,
++                  null)) {
++                  throw new Win32Exception(api.GetLastError());
++              }
++            }
++
++            private WinNT.HANDLE getFd() {
++              final String deviceid = getDeviceGuid();
++
++              final WinNT.HANDLE hFile =  api.CreateFile(
++                  "\\\\.\\Global\\" + deviceid + ".tap",
++                  WinNT.GENERIC_READ | WinNT.GENERIC_WRITE,
++                  WinNT.FILE_SHARE_READ | WinNT.FILE_SHARE_WRITE,
++                  /* If lpSecurityAttributes is NULL, the handle cannot be inherited */
++                  null, WinNT.OPEN_EXISTING,
++                  WinNT.FILE_ATTRIBUTE_SYSTEM | WinNT.FILE_FLAG_OVERLAPPED,
++                  null);
++
++              // bring up device
++              setStatus(true, hFile);
++
++              return hFile;
++            }
++
++            // https://github.com/traff/pty4j/blob/master/src/com/pty4j/windows/NamedPipe.java
++            // https://github.com/facebook/buck/blob/master/src/com/facebook/buck/io/windowspipe/WindowsNamedPipe.java
++
++            private final WinNT.HANDLE hFile = getFd();
++            private final WinNT.HANDLE readEvent = createEvent();
++            private final WinNT.HANDLE writeEvent = createEvent();
++
++            private WinNT.HANDLE createEvent() {
++              WinNT.HANDLE event = api.CreateEvent(null, true, false, null);
++              if (event == null) {
++                throw new Win32Exception(api.GetLastError());
++              }
++              return event;
++            }
++
++            private WinNT.OVERLAPPED createOverlapped(WinNT.HANDLE event) {
++              WinNT.OVERLAPPED olap = new WinNT.OVERLAPPED();
++              olap.hEvent = event;
++              // JNA doc write(): Writes the fields of the struct to native memory
++              olap.write();
++              return olap;
++            }
++
++            @Override
++            public int read(byte[] buffer) {
++
++                Memory readBuffer = new Memory(buffer.length);
++
++                WinNT.OVERLAPPED readOver = createOverlapped(readEvent);
++                if (!api.ReadFile(hFile, readBuffer, buffer.length, null, readOver) && 
++                    api.GetLastError() != WinError.ERROR_IO_PENDING) {
++                    throw new Win32Exception(api.GetLastError());
++                }
++
++                IntByReference lpNumberOfBytesRead = new IntByReference();
++
++                // wait = true, blocked until data is read
++                if (!api.GetOverlappedResult(hFile, readOver, lpNumberOfBytesRead, true)) {
++                  throw new Win32Exception(api.GetLastError());
++                }
++
++                int readValue = lpNumberOfBytesRead.getValue();
++                readBuffer.read(0, buffer, 0, readValue);
++
++                return readValue;
++            }
++
++            @Override
++            public int write(byte[] buffer) {
++
++                Memory writeBuffer = new Memory(buffer.length);
++                writeBuffer.write(0, buffer, 0, buffer.length);
++
++                WinNT.OVERLAPPED writeOver = createOverlapped(writeEvent);
++                if (!api.WriteFile(hFile, writeBuffer, buffer.length, null, writeOver) && 
++                    api.GetLastError() != WinError.ERROR_IO_PENDING) {
++                    throw new Win32Exception(api.GetLastError());
++                }
++
++                IntByReference lpNumberOfBytesWritten = new IntByReference();
++
++                // wait = true, blocked until data is written
++                if (!api.GetOverlappedResult(hFile, writeOver, lpNumberOfBytesWritten, true)) {
++                  throw new Win32Exception(api.GetLastError());
++                }
++
++                return lpNumberOfBytesWritten.getValue();
++            }
++
++            @Override
++            public void close() {
++                api.CloseHandle(hFile);
++                api.CloseHandle(readEvent);
++                api.CloseHandle(writeEvent);
++            }
++        };
++    }
++
++    private static ITunTap getMacTap() {
++        throw new UnsupportedOperationException("TODO: Mac not supported yet");
++    }
 +
 +    public static void main(String args[]) throws Exception {
 +
-+        try (ITunTap tap = getLinuxTap("O_O")) {
-+            byte[] frame = new byte[1500];
++        // Linux:
++        // sudo ip tuntap add mazko mode tap user $USER
++        // run me
++        // sudo ip addr add 10.0.0.1/24 dev mazko && sudo ip link set dev mazko up && ping 10.0.0.42
++        // sudo ip tuntap delete mazko mode tap
 +
-+            while (tap.read(frame) > 0) {
-+                System.out.println(Arrays.toString(frame));
++        // Windows:
++        // install Tap-windows driver from OpenVPN site
++        // Start -> Control Panel -> Network Connections rename "TAP-Windows Adapter" to mazko
++        // netsh interface ip set address mazko static 10.0.0.1 255.255.255.0
++        // run me
++        // ping 10.0.0.42
++
++        // run me
++        // javac -cp ../../../../../lib/jna-4.4.0.jar:../../../../../lib/jna-platform-4.4.0.jar TunTap.java Observable.java Assert.java
++        // java -cp ../../../../../lib/jna-4.4.0.jar:../../../../../lib/jna-platform-4.4.0.jar:../../../../../ se.sics.mspsim.platform.proiot3.TunTapImpl
++
++        try (ITunTap tap = getTap()) {
++            while (true) {
++                byte[] frame = new byte[1500];
++                int num = tap.read(frame);
++                if (num > 0) {
++                  System.out.println(Arrays.toString(Arrays.copyOf(frame, num)));
++                  System.out.println();
++                  // System.out.println(Arrays.toString(frame));
++                  // System.out.println();
++                } else {
++                  throw new Exception("num ? " + num);
++                }
 +            }
 +        } 
 +    }

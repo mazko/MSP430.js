@@ -22,7 +22,7 @@ export class SimComponent {
     { name: 'MSP430F1611 & SSD1306 & 8 buttons & 10xRGB',  id: 2 },
       null, // divider
     { name: 'MSP430F1611 & RGB Circle | UART',  id: 4 },
-    { name: 'MSP430F1611 & SSD1306 & 8 buttons & RGB | UART | ENC28J60',  id: 3 },
+    { name: 'MSP430F1611 & SSD1306 & 8 btn & RGB | UART | ENC28J60',  id: 3 },
   ];
 
   readonly alerts: {msg: string, type: BsAlertType, html?: boolean}[] = [];
