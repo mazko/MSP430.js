@@ -391,7 +391,7 @@ index 0000000..5bbe995
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/Enc28J60.java b/se/sics/mspsim/platform/proiot3/Enc28J60.java
 new file mode 100644
-index 0000000..3742b2d
+index 0000000..09b3de8
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Enc28J60.java
 @@ -0,0 +1,331 @@
@@ -547,14 +547,14 @@ index 0000000..3742b2d
 +          packet.add(new Byte((byte) 0x00)); /* ignore crc */
 +        }
 +
++        Assert.ok(len == packet.size() - 6 /* next packet pointer + status */, "Received Byte Count");
++
 +        // https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ConcurrentLinkedDeque.html
 +        // Memory consistency effects: 
 +        // As with other concurrent collections, actions in a thread prior to placing 
 +        // an object into a ConcurrentLinkedDeque happen-before actions subsequent to 
 +        // the access or removal of that element from the ConcurrentLinkedDeque in another thread.
 +        rbmPackets.add(packet);
-+
-+        Assert.ok(len == packet.size() - 6 /* next packet pointer + status */, "Received Byte Count");
 +
 +        log("nr pending packets increased to: " + rbmPackets.size());
 +      }
@@ -1040,7 +1040,7 @@ index 0000000..5e1b7be
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/TunTap.java b/se/sics/mspsim/platform/proiot3/TunTap.java
 new file mode 100644
-index 0000000..877b9cd
+index 0000000..6ddaa50
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/TunTap.java
 @@ -0,0 +1,430 @@
@@ -1262,7 +1262,7 @@ index 0000000..877b9cd
 +    // (NDIS 6) https://github.com/songgao/water/blob/master/syscalls_windows.go
 +
 +    interface Kernel32 extends com.sun.jna.platform.win32.Kernel32 {
-+      Kernel32 INSTANCE = (Kernel32)Native.loadLibrary("kernel32", Kernel32.class, com.sun.jna.win32.W32APIOptions.DEFAULT_OPTIONS);
++        Kernel32 INSTANCE = (Kernel32)Native.loadLibrary("kernel32", Kernel32.class, com.sun.jna.win32.W32APIOptions.DEFAULT_OPTIONS);
 +
 +        // this methods not included in JNA 4.4.0 Kernel32
 +

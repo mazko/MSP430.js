@@ -12,7 +12,6 @@
       sudo ip tuntap add mazko mode tap user $USER && \
       sudo ip addr add 10.0.0.1/24 dev mazko && \
       sudo ip link set dev mazko up
-      # sudo tshark -i mazko
       # sudo ip tuntap delete mazko mode tap
 
    - Windows:
@@ -20,12 +19,23 @@
       # Start -> Control Panel -> Network Connections then rename "TAP-Windows Adapter" to mazko
       netsh interface ip set address mazko static 10.0.0.1 255.255.255.0
 
-5) Quick test for virtual network (you'll see output containing the ICMP frame)
+5) Quick test for virtual network (you'll see output containing the ICMP frame):
       java -cp mspsim.js.jar se.sics.mspsim.platform.proiot3.TunTapImpl
       ping 10.0.0.255
 
 6) Enc28J60 test:
       # Configure virtual network
       # launch mspsim.js.jar 1) or 2)
-      # open in browser http://mazko.github.io/MSP430.js/c82f4c8f550e96f0d9fb239333aab076
+      # open in browser http://mazko.github.io/MSP430.js/8d0c140abd5f58f0484d5f906579f7c1
       ping 10.0.0.42
+
+7) Share an Internet Connection:
+
+   - Linux (assuming wlo1 is connected to the internet):
+      sudo sysctl -w net.ipv4.ip_forward=1
+      sudo iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -o wlo1 -j MASQUERADE
+      sudo iptables -A FORWARD -i wlo1 -o mazko -j ACCEPT
+      sudo iptables -A FORWARD -i mazko -o wlo1 -j ACCEPT
+
+   - Windows:
+      # Start -> Control Panel -> Network Connections then right-click on the icon that represents your connection to the internet -> left-click on "Properties" -> "Sharing" -> "Allow other network users to connect through this computer's". Verify virtual network ip address 4)

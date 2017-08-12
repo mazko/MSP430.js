@@ -2,7 +2,7 @@
 reset && (export GCC_DIR=~/ti/msp430_gcc ; 
     $GCC_DIR/bin/msp430-elf-c++ \
     -I $GCC_DIR/include -L $GCC_DIR/include \
-    -Werror -Wall -mmcu=msp430f1611 -O2 ENC28J60.cpp -o ENC28J60.out)
+    -Werror -Wall -mmcu=msp430f1611 -O2 ENC28J60.cpp -o ENC28J60_10.0.0.42.out)
 */
 
 #include <msp430.h>
@@ -926,7 +926,6 @@ void eth_filter(eth_frame_t *frame, uint16_t len)
       arp_filter(frame, len - sizeof(eth_frame_t));
       break;
     case ETH_TYPE_IP:
-      uart_print("ip_filter\n");
       ip_filter(frame, len - sizeof(eth_frame_t));
       break;
     }
