@@ -11,7 +11,7 @@
     <span class="sr-only">Split button!</span>
     </button>
     <ul class="dropdown-menu" *dropdownMenu role="menu" aria-labelledby="split-button">
-      <li *ngFor="let board of boards" [attr.role]="board && 'menuitem'" [ngClass]="board ? 'fix-me-if-null-here-routerlinkactive-adds-class-attribute-without-value' : ['divider', 'dropdown-divider']" routerLinkActive="active" >
+      <li *ngFor="let board of boards" [attr.role]="board && 'menuitem'" [ngClass]="board ? null : ['divider', 'dropdown-divider']" routerLinkActive="active" >
         <a *ngIf="board" class="dropdown-item" [routerLink]="['/board', board.id]">{{board.name}}</a>
       </li>
     </ul>

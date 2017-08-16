@@ -1,10 +1,10 @@
-1) java -Djava.awt.headless=true -cp mspsim.js.jar se.sics.mspsim.emulink.WSEmuLink
+1) java -Djava.awt.headless=true -jar mspsim.js.jar
 
 2) Remove -Djava.awt.headless=true to enable UART UI
 
 3) Examples for 1) or 2):
-   - anime: http://mazko.github.io/MSP430.js/21e726e95d4509f26e42ef63420284e2
-   - snake: http://mazko.github.io/MSP430.js/a492eba288cddc9309cbeb83900b0a21
+   - anime: http://localhost:9148/21e726e95d4509f26e42ef63420284e2
+   - snake: http://localhost:9148/a492eba288cddc9309cbeb83900b0a21
 
 4) Configure virtual network (you can change 10.0.0.1):
 
@@ -26,7 +26,7 @@
 6) Enc28J60 test:
       # Configure virtual network
       # launch mspsim.js.jar 1) or 2)
-      # open in browser http://mazko.github.io/MSP430.js/8d0c140abd5f58f0484d5f906579f7c1
+      # open in browser http://localhost:9148/8d0c140abd5f58f0484d5f906579f7c1
       ping 10.0.0.42
 
 7) Share an Internet Connection:

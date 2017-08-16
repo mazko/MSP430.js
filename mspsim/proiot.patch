@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index 427ffe5..07f93a5 100644
+index 427ffe5..d74e833 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -81,7 +81,7 @@ TIMERTEST := tests/timertest.firmware
@@ -11,6 +11,15 @@ index 427ffe5..07f93a5 100644
  
  SOURCES := ${wildcard *.java $(addsuffix /*.java,$(PACKAGES))}
  
+@@ -105,7 +105,7 @@ $(JARFILE):	$(OBJECTS)
+ 	-@$(RM) JarManifest.txt
+ 	@echo >>JarManifest.txt "Manifest-Version: 1.0"
+ 	@echo >>JarManifest.txt "Sealed: true"
+-	@echo >>JarManifest.txt "Main-Class: se.sics.mspsim.Main"
++	@echo >>JarManifest.txt "Main-Class: se.sics.mspsim.emulink.WSEmuLink"
+ 	@echo >>JarManifest.txt "Class-path: ${LIBS}"
+ 	$(JAR) cfm $(JARFILE) JarManifest.txt images/*.jpg -C $(BUILD) .
+ 	-@$(RM) JarManifest.txt
 diff --git a/se/sics/mspsim/core/MSP430.java b/se/sics/mspsim/core/MSP430.java
 index 15dc730..01e707a 100644
 --- a/se/sics/mspsim/core/MSP430.java
@@ -176,49 +185,94 @@ index 0000000..59b8836
 \ No newline at end of file
 diff --git a/se/sics/mspsim/emulink/WSEmuLink.java b/se/sics/mspsim/emulink/WSEmuLink.java
 new file mode 100644
-index 0000000..87659de
+index 0000000..ca40786
 --- /dev/null
 +++ b/se/sics/mspsim/emulink/WSEmuLink.java
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,74 @@
 +package se.sics.mspsim.emulink;
 +
-+import org.glassfish.tyrus.server.Server;
 +
-+final public class WSEmuLink {
++import io.undertow.server.DefaultByteBufferPool;
 +
-+    final int PORT = 9148;
++import io.undertow.Handlers;
++import io.undertow.Undertow;
++import io.undertow.server.handlers.PathHandler;
++import io.undertow.server.handlers.resource.PathResourceManager;
++import io.undertow.servlet.api.DeploymentInfo;
++import io.undertow.servlet.api.DeploymentManager;
++import io.undertow.servlet.api.ServletContainer;
++import io.undertow.websockets.jsr.WebSocketDeploymentInfo;
++import io.undertow.servlet.api.ErrorPage;
++import io.undertow.util.StatusCodes;
 +
-+    public void run() {
++import org.xnio.Xnio;
++import org.xnio.XnioWorker;
++import org.xnio.OptionMap;
++import org.xnio.Options;
 +
-+        Server server = new Server("localhost", PORT, "/", null, WSEmuLinkEndpoint.class);
++import java.nio.file.Paths;
 +
-+        try {
-+            server.start();
-+            synchronized(WSEmuLink.class) {
-+                WSEmuLink.class.wait();
-+            }
-+        } catch (Exception e) {
-+            e.printStackTrace();
-+        } finally {
-+            server.stop();
-+        }
++
++public class WSEmuLink {
++
++    static String argOrDefault(String[] args, int idx, String def) {
++        return idx < args.length ? args[idx] : def;
 +    }
 +
++    public static void main(final String[] args) throws Exception {
 +
-+    public static void main(String[] args) {
-+        new WSEmuLink().run();
++        PathHandler path = Handlers.path();
++
++        Undertow server = Undertow.builder()
++            .addHttpListener(
++                Integer.valueOf(argOrDefault(args, 0, "9148")), 
++                argOrDefault(args, 1, "localhost"))
++            .setHandler(path)
++            .build();
++        server.start();
++
++        final ServletContainer container = ServletContainer.Factory.newInstance();
++
++        // see undertow/../testutils/DefaultServer.java
++        XnioWorker worker = Xnio.getInstance().createWorker(OptionMap.builder()
++            .set(Options.WORKER_IO_THREADS, 8)
++            .set(Options.CONNECTION_HIGH_WATER, 1000000)
++            .set(Options.CONNECTION_LOW_WATER, 1000000)
++            .set(Options.WORKER_TASK_CORE_THREADS, 30)
++            .set(Options.WORKER_TASK_MAX_THREADS, 30)
++            .set(Options.TCP_NODELAY, true)
++            .set(Options.CORK, true)
++            .getMap());
++
++        DeploymentInfo builder = new DeploymentInfo()
++            .setClassLoader(WSEmuLink.class.getClassLoader())
++            .setContextPath("/")
++            .addWelcomePage("index.html")
++            .setResourceManager(new PathResourceManager(Paths.get("./webapp")))
++            .addServletContextAttribute(WebSocketDeploymentInfo.ATTRIBUTE_NAME,
++                new WebSocketDeploymentInfo()
++                    .setBuffers(new DefaultByteBufferPool(true, 100))
++                    .setWorker(worker)
++                    .addEndpoint(WSEmuLinkEndpoint.class)
++            )
++            .setDeploymentName("WSEmuLink")
++            .addErrorPage(new ErrorPage("/404.html", StatusCodes.NOT_FOUND));
++
++        DeploymentManager manager = container.addDeployment(builder);
++        manager.deploy();
++        path.addPrefixPath("/", manager.start());
 +    }
-+
 +}
 diff --git a/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java b/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java
 new file mode 100644
-index 0000000..81358cd
+index 0000000..550f777
 --- /dev/null
 +++ b/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,194 @@
 +package se.sics.mspsim.emulink;
 +
 +import java.io.IOException;
++import java.util.concurrent.LinkedBlockingQueue;
 +
 +import se.sics.json.JSONObject;
 +import se.sics.json.ParseException;
@@ -234,11 +288,26 @@ index 0000000..81358cd
 +import javax.websocket.MessageHandler;
 +
 +
-+// https://blog.openshift.com/how-to-build-java-websocket-applications-using-the-jsr-356-api/
-+// https://tyrus-project.github.io/documentation/1.13.1/user-guide.html
 +// https://gist.github.com/mnstrspeed/9295199
 +// https://abhirockzz.gitbooks.io/java-websocket-api-handbook/
 +// https://hpbn.co/websocket/
++
++
++final class Assert {
++
++  private Assert() {}
++
++  static void ok(boolean cond, String msg) {
++    if (!cond) {
++      System.err.println("!!! ASSERT !!!: " + msg);
++      System.exit(42);
++    }
++  }
++
++  static void fail(String msg) {
++    ok(false, msg);
++  }
++}
 +
 +
 +interface IEmuLinkTerminator {
@@ -248,18 +317,25 @@ index 0000000..81358cd
 +
 +class EmuLinkWrapper extends EmuLink {
 +
++    // https://stackoverflow.com/a/38199247
++    // if your ServerEndpoint class needs to deal with instance variables in
++    // multiple methods for some reason, it must be implemented in a thread safe manner.
++
 +    private final Object padLock = new Object();
 +
 +    public boolean handleMessage(String msg) throws ParseException {
 +        // http://juliusdavies.ca/json-simple-1.1.1-javadocs/org/json/simple/parser/JSONParser.html
-+        // Parser for JSON text. Please note that JSONParser is NOT thread-safe.
++        // Please note that JSONParser is NOT thread-safe.
++        // but https://stackoverflow.com/a/5173439
++        JSONObject json = JSONObject.parseJSONObject(msg);
 +        synchronized (padLock) {
-+            JSONObject json = JSONObject.parseJSONObject(msg);
 +            return handleMessage(json);
 +        }
 +    }
 +
 +    public void stopAll(String reason) {
++        sendQueue.clear();
++        putToSendQueue(poison);
 +        synchronized (padLock) {
 +            for (GenericNode node : this.nodes.values()) {
 +                if (node.getCPU().isRunning()) {
@@ -270,20 +346,55 @@ index 0000000..81358cd
 +        }       
 +    }
 +
++    // https://pragprog.com/magazines/2013-05/java-active-objects
++    private LinkedBlockingQueue<String> sendQueue = new LinkedBlockingQueue<>();
++
++    private static final String poison = new String();
++
++    void putToSendQueue(String str) {
++        try {
++            sendQueue.put(str);
++        } catch (Exception e) {
++            e.printStackTrace();
++            Assert.fail("putToSendQueue");
++        }
++    }
++
++    EmuLinkWrapper(final Session session) {
++        new Thread () {   
++            @Override 
++            public void run() {   
++                try {
++                    while(true) {
++                        String msg = sendQueue.take();
++                        if (msg == poison) {
++                            break;
++                        } else {
++                            session.getBasicRemote().sendText(msg);
++                        }
++                    }
++                } catch (Exception e) {
++                    e.printStackTrace();
++                    Assert.ok(!session.isOpen(), "sendText thread problem");
++                    System.out.println("Assume it's OK...");
++                }
++                System.out.println("Active Object thread stopped...");
++            }
++        }.start();
++    }
 +}
 +
 +
-+@ServerEndpoint(value = "/")
++@ServerEndpoint(value = "/emulink")
 +public class WSEmuLinkEndpoint {
 +
 +    @OnOpen
 +    public void onOpen(final Session session) {
 +
 +        System.out.println("Connected ... " + session.getId());
++        // System.out.println("Thread onOpen # " + Thread.currentThread().getId());
 +
-+        final EmuLinkWrapper emulink = new EmuLinkWrapper() {
-+
-+            private final Object padLock = new Object();
++        final EmuLinkWrapper emulink = new EmuLinkWrapper(session) {
 +
 +            // https://blogs.oracle.com/pavelbucek/is-websocket-session-really-thread-safe
 +            // 2+ threads: onMessage->EmuLink response + GenericNode[].run
@@ -293,18 +404,10 @@ index 0000000..81358cd
 +            // - if two threads attempt to call a send method concurrently, or if a developer attempts to send a new message while in the middle of sending an existing one, the send method called while the connection is already busy may throw an IllegalStateException.
 +            @Override
 +            public void sendToSimulator(String message) {
-+                try {
-+                    synchronized (padLock) {
-+                        session.getBasicRemote().sendText(message);
-+                    }
-+                } catch (Exception e) {
-+                    e.printStackTrace();
-+                    if (session.isOpen()) {
-+                        System.exit(-42);
-+                    } else {
-+                        System.out.println("Assume it's OK...");
-+                    }
-+                }
++                // it's a shame. Can't find any jsr356 specification about
++                // is session.getAsyncRemote().sendX guarantee sequentially sendX
++                // just for sure use simplified ActiveObject pattern + getBasicRemote
++                putToSendQueue(message);
 +            }
 +        };
 +
@@ -313,7 +416,8 @@ index 0000000..81358cd
 +            @Override
 +            public void onMessage(String message) {
 +                // System.out.println("Thread onMessage # " + Thread.currentThread().getId());
-+                // Each time different thread
++                // tyrus-grizzly-server: onMessage each time different thread
++                // undertow: onOpen/onMessage different thread
 +                try {
 +                    if (!emulink.handleMessage(message)) {
 +                        // currently not used and not tested
@@ -322,7 +426,7 @@ index 0000000..81358cd
 +                    }
 +                } catch (Exception e) {
 +                    e.printStackTrace();
-+                    System.exit(-42);
++                    Assert.fail("onMessage");
 +                }
 +            }
 +        });
@@ -339,6 +443,7 @@ index 0000000..81358cd
 + 
 +    @OnClose
 +    public void onClose(Session session, CloseReason closeReason) {
++        // System.out.println("Thread onClose # " + Thread.currentThread().getId());
 +        System.out.println(String.format("Session %s closed because of %s", session.getId(), closeReason));
 +        ((IEmuLinkTerminator)session.getUserProperties().get("terminator")).terminate();
 +    }
@@ -347,7 +452,14 @@ index 0000000..81358cd
 +    @OnError
 +    public void onError(Session session, Throwable t) {
 +        t.printStackTrace();
-+        System.exit(-42);
++        // http://docs.oracle.com/javaee/7/api/javax/websocket/Session.html
++        // Following the convention of Closeable calling the Session close() methods after the Session has been closed has no effect.
++        try {
++            session.close();
++        } catch (Exception e) {
++            e.printStackTrace();
++            Assert.fail("onError");
++        }
 +    }
 +
 +}

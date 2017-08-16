@@ -12,24 +12,41 @@ echo '<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w
   <artifactId>wordgame</artifactId>
   <version>0.0.1-SNAPSHOT</version>
 
+  <properties>
+      <undertow.version>1.4.18.Final</undertow.version>
+      <jna.version>4.4.0</jna.version>
+  </properties>
+
   <dependencies>
 
     <dependency>
-        <groupId>javax.websocket</groupId>
-        <artifactId>javax.websocket-api</artifactId>
-        <version>1.1</version>
+        <groupId>net.java.dev.jna</groupId>
+        <artifactId>jna</artifactId>
+        <version>${jna.version}</version>
     </dependency>
 
     <dependency>
-        <groupId>org.glassfish.tyrus</groupId>
-        <artifactId>tyrus-server</artifactId>
-        <version>1.13.1</version>
+        <groupId>net.java.dev.jna</groupId>
+        <artifactId>jna-platform</artifactId>
+        <version>${jna.version}</version>
     </dependency>
 
     <dependency>
-        <groupId>org.glassfish.tyrus</groupId>
-        <artifactId>tyrus-container-grizzly-server</artifactId>
-        <version>1.13.1</version>
+        <groupId>io.undertow</groupId>
+        <artifactId>undertow-core</artifactId>
+        <version>${undertow.version}</version>
+    </dependency>
+
+    <dependency>
+        <groupId>io.undertow</groupId>
+        <artifactId>undertow-servlet</artifactId>
+        <version>${undertow.version}</version>
+    </dependency>
+
+    <dependency>
+        <groupId>io.undertow</groupId>
+        <artifactId>undertow-websockets-jsr</artifactId>
+        <version>${undertow.version}</version>
     </dependency>
 
   </dependencies>
@@ -89,10 +106,6 @@ cp /tmp/pom-$$/target/lib/* lib/
 patch -p1 < ../proiot.patch
 git add .
 
-wget --directory-prefix=./lib/ \
-     http://repo1.maven.org/maven2/net/java/dev/jna/jna/4.4.0/jna-4.4.0.jar \
-     http://repo1.maven.org/maven2/net/java/dev/jna/jna-platform/4.4.0/jna-platform-4.4.0.jar
-
 docker run -it --rm -w='/home/src/'            \
   -e JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF8'  \
   -v `pwd`:/home/src mspsim-java7 make jar
@@ -103,5 +116,6 @@ mv mspsim.jar ../mspsim-build/mspsim.js.jar
 cp -r lib/ ../mspsim-build/lib
 cd -
 cp readme mspsim-build/
+cp -r ../ui/ng2/dist/ mspsim-build/webapp/
 rm mspsim.js.zip
 zip -r mspsim.js.zip mspsim-build/

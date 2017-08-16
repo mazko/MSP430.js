@@ -67,8 +67,9 @@ export class MspsimService {
 
       this._simState = SimStateEnum.CONNECTING;
 
-      // TODO: move WebSocket in WebWorker to prevent UI freeze
-      this._websocket = new WebSocket('ws://localhost:9148');
+      // ws://localhost:9148/emulink
+      this._websocket = new WebSocket(
+        `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/emulink`);
 
       let timeoutID = null;
 
@@ -97,7 +98,7 @@ export class MspsimService {
               this._simState = SimStateEnum.TIMEOUT;
               websocket.close();
             }
-          }, 4444);
+          }, 12345);
       };
 
       let health_cache = null, health_timeoutId = null;
