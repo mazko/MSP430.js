@@ -13,8 +13,8 @@ echo '<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w
   <version>0.0.1-SNAPSHOT</version>
 
   <properties>
-      <undertow.version>1.4.18.Final</undertow.version>
-      <jna.version>4.4.0</jna.version>
+      <undertow.version>1.4.20.Final</undertow.version>
+      <jna.version>4.5.0</jna.version>
   </properties>
 
   <dependencies>
@@ -117,5 +117,22 @@ cp -r lib/ ../mspsim-build/lib
 cd -
 cp readme mspsim-build/
 cp -r ../ui/ng2/dist/ mspsim-build/webapp/
+[ "`find ../ui/ng2/dist/ -type f -exec md5sum {} \; | sort -k 2 | md5sum`" = "476088b2dbac0cbe71ecb0c853db60d6  -" ]
+echo '<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>MSP430.js Help Page</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+  </head>
+  <body>
+    <pre>' > mspsim-build/webapp/help.html
+cat readme | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g; s!https\?://localhost:[0-9]\+\([-A-Za-z0-9+&@#/%?=~_|!,.;]\+\)!<a href="\1">\0</a>!g; s!\([^<>]\)\(https\?://[-A-Za-z0-9.:]\+[-A-Za-z0-9+&@#/%?=~_|!,.;]\+\)!\1<a href="\2">\2</a>!g' >> mspsim-build/webapp/help.html
+echo '    </pre>
+  </body>
+</html>' >> mspsim-build/webapp/help.html
 rm mspsim.js.zip
 zip -r mspsim.js.zip mspsim-build/
+echo
+echo '*************** Build OK ***************'
+echo

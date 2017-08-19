@@ -49,7 +49,7 @@ index da7ed56..077c251 100644
    private final Memory memorySegments[];
    Memory currentSegment;
 diff --git a/se/sics/mspsim/emulink/EmuLink.java b/se/sics/mspsim/emulink/EmuLink.java
-index 155af60..9dd8155 100755
+index 155af60..a13d541 100755
 --- a/se/sics/mspsim/emulink/EmuLink.java
 +++ b/se/sics/mspsim/emulink/EmuLink.java
 @@ -56,7 +56,7 @@ import se.sics.mspsim.core.MSP430Constants;
@@ -161,7 +161,7 @@ index 155af60..9dd8155 100755
                          node.getCPU().reset();
                      } catch (IOException e) {
                          System.err.println("EmuLink: failed to load firmware '" + file + "'");
-@@ -286,7 +326,8 @@ public class EmuLink {
+@@ -286,13 +326,17 @@ public class EmuLink {
          return true;
      }
  
@@ -171,16 +171,26 @@ index 155af60..9dd8155 100755
          if (out != null) {
              out.write(message);
              out.flush();
+         }
+     }
+ 
++    @Override
++    public void simulationStopped() {}
++
+     protected void sendSerialToNode(String node, int data) {
+     }
+ 
 diff --git a/se/sics/mspsim/emulink/IEmuLinkWriter.java b/se/sics/mspsim/emulink/IEmuLinkWriter.java
 new file mode 100644
-index 0000000..59b8836
+index 0000000..0a782ba
 --- /dev/null
 +++ b/se/sics/mspsim/emulink/IEmuLinkWriter.java
-@@ -0,0 +1,5 @@
+@@ -0,0 +1,6 @@
 +package se.sics.mspsim.emulink;
 +
 +public interface IEmuLinkWriter {
 +  void sendToSimulator(String message);
++  void simulationStopped();
 +}
 \ No newline at end of file
 diff --git a/se/sics/mspsim/emulink/WSEmuLink.java b/se/sics/mspsim/emulink/WSEmuLink.java
@@ -265,10 +275,10 @@ index 0000000..ca40786
 +}
 diff --git a/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java b/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java
 new file mode 100644
-index 0000000..550f777
+index 0000000..6eb6014
 --- /dev/null
 +++ b/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java
-@@ -0,0 +1,194 @@
+@@ -0,0 +1,203 @@
 +package se.sics.mspsim.emulink;
 +
 +import java.io.IOException;
@@ -347,7 +357,7 @@ index 0000000..550f777
 +    }
 +
 +    // https://pragprog.com/magazines/2013-05/java-active-objects
-+    private LinkedBlockingQueue<String> sendQueue = new LinkedBlockingQueue<>();
++    private final LinkedBlockingQueue<String> sendQueue = new LinkedBlockingQueue<>();
 +
 +    private static final String poison = new String();
 +
@@ -375,7 +385,7 @@ index 0000000..550f777
 +                    }
 +                } catch (Exception e) {
 +                    e.printStackTrace();
-+                    Assert.ok(!session.isOpen(), "sendText thread problem");
++                    WSEmuLinkEndpoint.closeSessionHlpr(session);
 +                    System.out.println("Assume it's OK...");
 +                }
 +                System.out.println("Active Object thread stopped...");
@@ -408,6 +418,11 @@ index 0000000..550f777
 +                // is session.getAsyncRemote().sendX guarantee sequentially sendX
 +                // just for sure use simplified ActiveObject pattern + getBasicRemote
 +                putToSendQueue(message);
++            }
++
++            @Override
++            public void simulationStopped() {
++                WSEmuLinkEndpoint.closeSessionHlpr(session);
 +            }
 +        };
 +
@@ -452,13 +467,17 @@ index 0000000..550f777
 +    @OnError
 +    public void onError(Session session, Throwable t) {
 +        t.printStackTrace();
++        closeSessionHlpr(session);
++    }
++
++    static void closeSessionHlpr(Session session) {
 +        // http://docs.oracle.com/javaee/7/api/javax/websocket/Session.html
 +        // Following the convention of Closeable calling the Session close() methods after the Session has been closed has no effect.
 +        try {
 +            session.close();
 +        } catch (Exception e) {
 +            e.printStackTrace();
-+            Assert.fail("onError");
++            Assert.fail("closeSessionHlpr");
 +        }
 +    }
 +
@@ -503,10 +522,10 @@ index 0000000..5bbe995
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/Enc28J60.java b/se/sics/mspsim/platform/proiot3/Enc28J60.java
 new file mode 100644
-index 0000000..09b3de8
+index 0000000..cfa17d3
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Enc28J60.java
-@@ -0,0 +1,331 @@
+@@ -0,0 +1,345 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import java.util.concurrent.ConcurrentLinkedDeque;
@@ -517,6 +536,7 @@ index 0000000..09b3de8
 +import se.sics.mspsim.core.MSP430Core;
 +import se.sics.mspsim.core.USARTListener;
 +import se.sics.mspsim.core.USARTSource;
++import se.sics.mspsim.platform.GenericNode;
 +
 +// previous: https://gist.github.com/e89c9f685988660ceb6114e3b7f2d6f0
 +
@@ -534,6 +554,7 @@ index 0000000..09b3de8
 +    SPI_WBM (3),   /* write buffer memory */
 +    SPI_BFS (4),   /* bit-field set */
 +    SPI_BFC (5),   /* bit-field clear */
++    SPI_XXX (6),   /* unknown ? */
 +    SPI_SRC (7);   /* system reset command */
 +
 +    private final int numVal;
@@ -629,7 +650,7 @@ index 0000000..09b3de8
 +    }
 +  }
 +
-+  public Enc28J60(MSP430Core cpu) throws Exception {
++  public Enc28J60(final MSP430Core cpu, final GenericNode node) {
 +    super("Enc28J60", "Proiot Ethernet", cpu);
 +    tapObserver = new Observable.Observer<byte[]>() {
 +      @Override
@@ -661,14 +682,26 @@ index 0000000..09b3de8
 +
 +        Assert.ok(len == packet.size() - 6 /* next packet pointer + status */, "Received Byte Count");
 +
-+        // https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ConcurrentLinkedDeque.html
-+        // Memory consistency effects: 
-+        // As with other concurrent collections, actions in a thread prior to placing 
-+        // an object into a ConcurrentLinkedDeque happen-before actions subsequent to 
-+        // the access or removal of that element from the ConcurrentLinkedDeque in another thread.
-+        rbmPackets.add(packet);
-+
-+        log("nr pending packets increased to: " + rbmPackets.size());
++        // TODO: memory leak
++        // 39662a.pdf 12.1.2 RECEIVE ERROR INTERRUPT FLAG (RXERIF)
++        // When a packet is being received and the receive buffer
++        // runs completely out of space, or EPKTCNT is 255 and
++        // cannot be incremented, the packet being received will
++        // be aborted (permanently lost) and the EIR.RXERIF bit
++        // will be set to ‘1’. Once set, RXERIF can only be cleared
++        // by the host controller or by a Reset condition.
++        if (rbmPackets.size() >= 0xFF) {
++          log("Assert: nr pending packets >= 0xFF, not implemented yet");
++          node.stop();
++        } else {
++          // https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ConcurrentLinkedDeque.html
++          // Memory consistency effects: 
++          // As with other concurrent collections, actions in a thread prior to placing 
++          // an object into a ConcurrentLinkedDeque happen-before actions subsequent to 
++          // the access or removal of that element from the ConcurrentLinkedDeque in another thread.
++          rbmPackets.add(packet);
++          log("nr pending packets increased to: " + rbmPackets.size());
++        }
 +      }
 +    };
 +    TunTap.getInstance().addObserver(tapObserver);
@@ -802,7 +835,7 @@ index 0000000..09b3de8
 +        break;
 +
 +      default:
-+        Assert.fail("spi_state ? " + spi_state);
++        log("warning, spi_state ? " + spi_state);
 +        break;
 +    }
 +
@@ -886,10 +919,10 @@ index 0000000..2bdc619
 \ No newline at end of file
 diff --git a/se/sics/mspsim/platform/proiot3/Proiot3Node.java b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
 new file mode 100644
-index 0000000..5e1b7be
+index 0000000..7659fcf
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,288 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import se.sics.mspsim.core.MSP430Constants;
@@ -916,13 +949,13 @@ index 0000000..5e1b7be
 +
 +public class Proiot3Node extends GenericNode implements IProiotNode {
 +
++  // http://docs.oracle.com/javase/specs/jls/se7/html/jls-4.html#jls-4.12.5
++  // For all reference types (§4.3), the default value is null
 +  private IEmuLinkWriter emulink;
 +
 +  private final Button[] buttons = new Button[8];
-+  
-+  // http://docs.oracle.com/javase/specs/jls/se7/html/jls-4.html#jls-4.12.5
-+  // For all reference types (§4.3), the default value is null
-+  private SerialMon serialMon;
++
++  private final boolean hasSerialMon = !GraphicsEnvironment.isHeadless();
 +
 +  private Enc28J60 enc28J60;
 +
@@ -949,44 +982,72 @@ index 0000000..5e1b7be
 +    super("ProiotNode", new MSP430f1611Config());
 +
 +    try {
-+      enc28J60 = new Enc28J60(cpu);
++      enc28J60 = new Enc28J60(cpu, this);
 +    } catch (LastErrorException ex) {
 +      System.out.println("Enc28J60 disabled -> " + ex);
 +    } catch (Exception ex) {
 +      ex.printStackTrace();
 +    }
 +
-+    // see autorun.sc
-+    if (!GraphicsEnvironment.isHeadless()) {
-+      // Add some windows for listening to serial output
-+      USART usart = cpu.getIOUnit(USART.class, "USART0");
-+      Assert.ok(usart != null, "ProiotNode: USART0 ?");
-+      // see autorun.sc
-+      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
-+    }
-+
 +    setupNode();
 +
 +    cpu.addSimEventListener(new SimEventListener() {
-+      @Override
++
++        private final Object mutex = new Object();
++        private SerialMon serialMon;
++
++        @Override
 +        public void simChanged(SimEvent event) {
 +          switch (event.getType()) {
 +            case START:
-+              if (serialMon != null) {
-+                serialMon.start();  
++              if (hasSerialMon) {
++                java.awt.EventQueue.invokeLater(new Runnable() {
++                  @Override
++                  public void run() {
++                    // see autorun.sc
++                    // Add some windows for listening to serial output
++                    USART usart = cpu.getIOUnit(USART.class, "USART0");
++                    Assert.ok(usart != null, "ProiotNode: USART0 ?");
++                    // see autorun.sc
++                    serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
++                    serialMon.start();
++                    synchronized(mutex) {
++                      mutex.notify();
++                    }
++                  }
++                });
++
++                // otherwise we can loose UART data on start
++                // to reproduce just add Thread.sleep() before serialMon.start()
++                // and remove mutex. code
++                synchronized(mutex) {
++                  try {
++                    mutex.wait();
++                  } catch (InterruptedException ex) {
++                    ex.printStackTrace();
++                  }
++                }
 +              }
 +              break;
 +
 +            case STOP:
 +              System.out.println("ProiotNode: stopped " + cpu.info());
 +
-+              if (serialMon != null) {
-+                serialMon.stop();
++              if (hasSerialMon) {
++                java.awt.EventQueue.invokeLater(new Runnable() {
++                  @Override
++                  public void run() {
++                    serialMon.stop();
++                  }
++                });
 +              }
 +
 +              if (enc28J60 != null) {
 +                enc28J60.close();
 +              }
++
++              emulink.simulationStopped();
++
 +              break;
 +            }
 +        }
@@ -1071,7 +1132,7 @@ index 0000000..5e1b7be
 +
 +            private void leds(final int data) {
 +
-+              final int LEDS_MASK = (serialMon == null ? 0xFF : 0b11001111) 
++              final int LEDS_MASK = (hasSerialMon ? 0b11001111 : 0xFF) 
 +                ^ SSD1306_E ^ SSD1306_COMMAND_OR_DATA; // P3(4,5) = USART0 TXD/RXD; 
 +              
 +              if ( (port3LastValue & LEDS_MASK) != (data & LEDS_MASK) ) {
@@ -1097,7 +1158,7 @@ index 0000000..5e1b7be
 +    };
 +  }
 +
-+  void setupP5() {
++  private void setupP5() {
 +    if (enc28J60 != null) {
 +      USART usart = cpu.getIOUnit(USART.class, "USART1");
 +      Assert.ok(usart != null, "ProiotNode: USART1 ?");
@@ -1613,10 +1674,10 @@ index 0000000..8d31a57
 +}
 diff --git a/se/sics/mspsim/platform/proiot4/Proiot4Node.java b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
 new file mode 100644
-index 0000000..65f95cd
+index 0000000..48261c8
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,190 @@
 +package se.sics.mspsim.platform.proiot4;
 +
 +import se.sics.mspsim.core.MSP430Constants;
@@ -1640,11 +1701,11 @@ index 0000000..65f95cd
 +
 +public class Proiot4Node extends GenericNode implements IProiotNode {
 +
-+  private IEmuLinkWriter emulink;
-+  
 +  // http://docs.oracle.com/javase/specs/jls/se7/html/jls-4.html#jls-4.12.5
 +  // For all reference types (§4.3), the default value is null
-+  private SerialMon serialMon;
++  private IEmuLinkWriter emulink;
++
++  private final boolean hasSerialMon = !GraphicsEnvironment.isHeadless();
 +
 +  @Override
 +  public void setEmuLink(IEmuLinkWriter emulink) {
@@ -1659,33 +1720,60 @@ index 0000000..65f95cd
 +  public Proiot4Node() {
 +    super("ProiotNode", new MSP430f1611Config());
 +
-+    // see autorun.sc
-+    if (!GraphicsEnvironment.isHeadless()) {
-+      // Add some windows for listening to serial output
-+      USART usart = cpu.getIOUnit(USART.class, "USART0");
-+      Assert.ok(usart != null, "ProiotNode: USART0 ?");
-+      // see autorun.sc
-+      serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
-+    }
-+
 +    setupNode();
 +
 +    cpu.addSimEventListener(new SimEventListener() {
-+      @Override
++
++        private final Object mutex = new Object();
++        private SerialMon serialMon;
++
++        @Override
 +        public void simChanged(SimEvent event) {
 +          switch (event.getType()) {
 +            case START:
-+              if (serialMon != null) {
-+                serialMon.start();  
++              if (hasSerialMon) {
++                java.awt.EventQueue.invokeLater(new Runnable() {
++                  @Override
++                  public void run() {
++                    // see autorun.sc
++                    // Add some windows for listening to serial output
++                    USART usart = cpu.getIOUnit(USART.class, "USART0");
++                    Assert.ok(usart != null, "ProiotNode: USART0 ?");
++                    // see autorun.sc
++                    serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
++                    serialMon.start();
++                    synchronized(mutex) {
++                      mutex.notify();
++                    }
++                  }
++                });
++
++                // otherwise we can loose UART data on start
++                // to reproduce just add Thread.sleep() before serialMon.start()
++                // and remove mutex. code
++                synchronized(mutex) {
++                  try {
++                    mutex.wait();
++                  } catch (InterruptedException ex) {
++                    ex.printStackTrace();
++                  }
++                }
 +              }
 +              break;
 +
 +            case STOP:
 +              System.out.println("ProiotNode: stopped " + cpu.info());
 +
-+              if (serialMon != null) {
-+                serialMon.stop();
++              if (hasSerialMon) {
++                java.awt.EventQueue.invokeLater(new Runnable() {
++                  @Override
++                  public void run() {
++                    serialMon.stop();
++                  }
++                });
 +              }
++
++              emulink.simulationStopped();
 +
 +              break;
 +            }
@@ -1738,7 +1826,7 @@ index 0000000..65f95cd
 +
 +        private void leds(final int data) {
 +
-+          final int LEDS_MASK = (serialMon == null ? 0xFF : 0b11001111);
++          final int LEDS_MASK = (hasSerialMon ? 0b11001111 : 0xFF);
 +          
 +          if ( (port3LastValue & LEDS_MASK) != (data & LEDS_MASK) ) {
 +            doEventPort(port3, (data & LEDS_MASK));
@@ -1780,3 +1868,16 @@ index 0000000..65f95cd
 +  }
 +
 +}
+diff --git a/se/sics/mspsim/ui/SerialMon.java b/se/sics/mspsim/ui/SerialMon.java
+index 1099ae7..44c9beb 100644
+--- a/se/sics/mspsim/ui/SerialMon.java
++++ b/se/sics/mspsim/ui/SerialMon.java
+@@ -203,7 +203,7 @@ public class SerialMon implements USARTListener, StateChangeListener, ServiceCom
+   public final void stop() {
+     status = Status.STOPPED;
+     if (window != null) {
+-      window.setVisible(false);
++      window.dispose();
+     }
+     usart.removeUSARTListener(this);
+     usart.removeStateChangeListener(this);
