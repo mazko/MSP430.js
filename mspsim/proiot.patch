@@ -919,7 +919,7 @@ index 0000000..2bdc619
 \ No newline at end of file
 diff --git a/se/sics/mspsim/platform/proiot3/Proiot3Node.java b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
 new file mode 100644
-index 0000000..7659fcf
+index 0000000..fdd100f
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
 @@ -0,0 +1,288 @@
@@ -993,7 +993,6 @@ index 0000000..7659fcf
 +
 +    cpu.addSimEventListener(new SimEventListener() {
 +
-+        private final Object mutex = new Object();
 +        private SerialMon serialMon;
 +
 +        @Override
@@ -1001,6 +1000,7 @@ index 0000000..7659fcf
 +          switch (event.getType()) {
 +            case START:
 +              if (hasSerialMon) {
++                final Object mutex = new Object();
 +                java.awt.EventQueue.invokeLater(new Runnable() {
 +                  @Override
 +                  public void run() {
@@ -1674,7 +1674,7 @@ index 0000000..8d31a57
 +}
 diff --git a/se/sics/mspsim/platform/proiot4/Proiot4Node.java b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
 new file mode 100644
-index 0000000..48261c8
+index 0000000..f789afa
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
 @@ -0,0 +1,190 @@
@@ -1724,7 +1724,6 @@ index 0000000..48261c8
 +
 +    cpu.addSimEventListener(new SimEventListener() {
 +
-+        private final Object mutex = new Object();
 +        private SerialMon serialMon;
 +
 +        @Override
@@ -1732,6 +1731,7 @@ index 0000000..48261c8
 +          switch (event.getType()) {
 +            case START:
 +              if (hasSerialMon) {
++                final Object mutex = new Object();
 +                java.awt.EventQueue.invokeLater(new Runnable() {
 +                  @Override
 +                  public void run() {

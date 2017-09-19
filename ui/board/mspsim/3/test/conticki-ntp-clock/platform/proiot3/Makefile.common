@@ -1,0 +1,15 @@
+# $Id: Makefile.common,v 1.3 2010/08/24 16:24:11 joxe Exp $
+
+ARCH=uip-ipchksum.c \
+     uart0.c enc28j60.c ssd1306.c draw.c
+
+CONTIKI_TARGET_DIRS = . stub
+
+CONTIKI_TARGET_MAIN = contiki-main.c uart0-putchar.c
+
+CONTIKI_TARGET_SOURCEFILES += $(ARCH) $(UIPDRIVERS)
+
+MCU=msp430f1611
+include $(CONTIKI)/cpu/msp430/Makefile.msp430
+
+MODULES+=core/net

@@ -1,0 +1,15 @@
+CONTIKI_PROJECT = ntp-clock
+all: $(CONTIKI_PROJECT)
+
+CONTIKI_TARGET_SOURCEFILES += ntp-client.c display.c
+
+ifdef CONTIKI_WITH_IPV4
+CONTIKI_TARGET_SOURCEFILES += dhcp-client.c
+CFLAGS += -DDEBUG
+else
+CFLAGS += -DUIP_CONF_ND6_RA_RDNSS=1
+# CFLAGS += -DRESOLV_CONF_SUPPORTS_MDNS=0
+endif
+
+CONTIKI = ../contiki-3.0
+include $(CONTIKI)/Makefile.include

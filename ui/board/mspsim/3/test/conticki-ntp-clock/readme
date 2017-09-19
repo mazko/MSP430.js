@@ -1,0 +1,11 @@
+curl -L https://github.com/contiki-os/contiki/archive/3.0.tar.gz | tar xz
+
+find ./contiki-3.0/core/net -type f -name '*.c' -print0 | xargs -0 sed -i 's/^#define DEBUG [^ ]\+$//; s/^#undef DEBUG$//'
+
+ln -s ../../platform/proiot3/ ./contiki-3.0/platform/
+
+cd ntp-clock/
+
+make TARGET=proiot3 clean && make TARGET=proiot3 CONTIKI_WITH_IPV6=0 CONTIKI_WITH_IPV4=1 && mv ntp-clock.proiot3 ntp-clock.ipv4.proiot3.elf && msp430-size $_
+
+make TARGET=proiot3 clean && make TARGET=proiot3 CONTIKI_WITH_IPV6=1 && mv ntp-clock.proiot3 ntp-clock.ipv6.proiot3.elf && msp430-size $_

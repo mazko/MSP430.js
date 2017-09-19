@@ -1,0 +1,9 @@
+ifndef CONTIKI
+  $(error CONTIKI not defined! You must specify where CONTIKI resides!)
+endif
+
+ifndef SMALL
+SMALL=1
+endif
+
+include $(CONTIKI)/platform/proiot3/Makefile.common

@@ -7,25 +7,7 @@
     - anime: http://localhost:9148/21e726e95d4509f26e42ef63420284e2
     - snake: http://localhost:9148/a492eba288cddc9309cbeb83900b0a21
 
-4) IPv6:
-
-    a) Configure virtual network:
-
-      - Linux:
-        # sudo ip tuntap delete mazko mode tap
-        sudo ip tuntap add mazko mode tap user $USER && \
-        sudo ip link set dev mazko up
-
-      - Windows:
-        # install Tap-windows driver from OpenVPN site
-        # Start -> Control Panel -> Network Connections then rename "TAP-Windows Adapter" to mazko
-        netsh interface ip set address mazko static 10.0.0.1 255.255.255.0
-
-    b) Quick test for virtual network (you'll see output containing the ICMP frame):
-        java -cp mspsim.js.jar se.sics.mspsim.platform.proiot3.TunTapImpl
-        ping6 ff02::1%mazko
-
-5) IPv4:
+4) IPv4:
 
     a) Configure virtual network (you can change 10.0.0.1):
 
@@ -75,6 +57,57 @@
 
     e) ENC28J60 examples for 1) or 2):
 
-      - NTP clock: http://localhost:9148/a55f5edb1bc53afefdee346e1314d2e5
+      - NTP clock: http://localhost:9148/dff936a1cd1a6317c7055e0f6fab4a6d
 
-6) http://mazko.github.io/
+5) IPv6:
+
+    a) Configure virtual network:
+
+      - Linux:
+        # sudo ip tuntap delete mazko mode tap
+        sudo ip tuntap add mazko mode tap user $USER && \
+        sudo ip link set dev mazko up
+
+      - Windows:
+        # install Tap-windows driver from OpenVPN site
+        # Start -> Control Panel -> Network Connections
+        # then "TAP-Windows Adapter" Properties -> check ipv6
+
+    b) Quick test for virtual network (you'll see output containing the ICMP frame):
+        java -cp mspsim.js.jar se.sics.mspsim.platform.proiot3.TunTapImpl
+        ping6 ff02::1%mazko
+
+    c) Share an Internet Connection:
+
+      - Linux (assuming Hurricane Electric Free IPv6 Tunnel Broker is used):
+        # ping6 ipv6.google.com
+        # Routed /64 as listed on tunnelbroker.net Tunnel Details page (without the trailing ::/64)
+        ROUTED64=2001:470:aaaa:bbbb
+        sudo sh -c "
+          sysctl -w net.ipv6.conf.all.forwarding=1
+          sysctl -w net.ipv6.conf.default.forwarding=1
+          ip addr add $ROUTED64::1/64 dev mazko
+          echo '
+          interface mazko
+          {
+              AdvSendAdvert on;
+              MaxRtrAdvInterval 10;  # TODO: maybe contiki bug
+              AdvOtherConfigFlag on; # clients get extra parameters via DHCPv6
+              prefix $ROUTED64::/64
+              {
+                AdvOnLink on;
+                AdvAutonomous on;
+              };
+              RDNSS 2001:470:20::2 {}; # Hurricane Electric DNS
+          };' > /etc/radvd.conf
+          service radvd restart"
+        # sudo radvdump
+
+      - Windows:
+        # TODO: 4) c) didn't work for me, but You can become a hero and fix it !
+
+    d) ENC28J60 examples for 1) or 2):
+
+      - NTP clock: http://localhost:9148/874a5876ab802c27d73669ab067df678
+
+6) IoT 🏠 🚗 🚸 http://mazko.github.io/ 📻 💡 🔊
