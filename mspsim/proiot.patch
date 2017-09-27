@@ -21,7 +21,7 @@ index 427ffe5..d74e833 100644
  	$(JAR) cfm $(JARFILE) JarManifest.txt images/*.jpg -C $(BUILD) .
  	-@$(RM) JarManifest.txt
 diff --git a/se/sics/mspsim/core/MSP430.java b/se/sics/mspsim/core/MSP430.java
-index 15dc730..01e707a 100644
+index 15dc730..a770cfd 100644
 --- a/se/sics/mspsim/core/MSP430.java
 +++ b/se/sics/mspsim/core/MSP430.java
 @@ -50,8 +50,8 @@ public class MSP430 extends MSP430Core {
@@ -35,6 +35,27 @@ index 15dc730..01e707a 100644
    private double rate = 2.0;
  
    // Debug time - measure cycles
+@@ -89,6 +89,9 @@ public class MSP430 extends MSP430Core {
+       throw new IllegalStateException("already running");
+     }
+     setRunning(true);
++    if (proiotPatchFixStopBeforeStarted) {
++      isStopping = true;
++    }
+     try {
+         // ??? - power-up  should be executed?!
+         time = System.currentTimeMillis();
+@@ -307,7 +310,10 @@ public class MSP430 extends MSP430Core {
+     return lastReturnedMicros;
+   }
+ 
++  private volatile boolean proiotPatchFixStopBeforeStarted;
++
+   public void stop() {
++      proiotPatchFixStopBeforeStarted = true;
+       isStopping = true;
+   }
+ 
 diff --git a/se/sics/mspsim/core/MSP430Core.java b/se/sics/mspsim/core/MSP430Core.java
 index da7ed56..077c251 100644
 --- a/se/sics/mspsim/core/MSP430Core.java
@@ -275,14 +296,17 @@ index 0000000..ca40786
 +}
 diff --git a/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java b/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java
 new file mode 100644
-index 0000000..6eb6014
+index 0000000..f20c05d
 --- /dev/null
 +++ b/se/sics/mspsim/emulink/WSEmuLinkEndpoint.java
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,225 @@
 +package se.sics.mspsim.emulink;
 +
 +import java.io.IOException;
 +import java.util.concurrent.LinkedBlockingQueue;
++import java.util.concurrent.TimeUnit;
++
++import java.nio.ByteBuffer;
 +
 +import se.sics.json.JSONObject;
 +import se.sics.json.ParseException;
@@ -362,6 +386,7 @@ index 0000000..6eb6014
 +    private static final String poison = new String();
 +
 +    void putToSendQueue(String str) {
++        Assert.ok(str != null, "putToSendQueue str can't be null");
 +        try {
 +            sendQueue.put(str);
 +        } catch (Exception e) {
@@ -376,10 +401,27 @@ index 0000000..6eb6014
 +            public void run() {   
 +                try {
 +                    while(true) {
-+                        String msg = sendQueue.take();
++                        String msg = sendQueue.poll(5, TimeUnit.SECONDS);
 +                        if (msg == poison) {
 +                            break;
++                        } else if (msg == null /* timeout */) {
++                            // https://github.com/websockets/ws#how-to-detect-and-close-broken-connections
++                            // Sometimes the link between the server and the client can be 
++                            // interrupted in a way that keeps both the server and the client 
++                            // unaware of the broken state of the connection (e.g. when pulling the cord).
++                            // In these cases ping messages can be used as a means to 
++                            // verify that the remote endpoint is still responsive.
++                            // ------------------------------------------------------
++                            // https://github.com/undertow-io/undertow/blob/master/websockets-jsr/src/main/java/io/undertow/websockets/jsr/WebSocketSessionRemoteEndpoint.java#L377
++                            // sendPing => WebSockets.sendPingBlocking
++                            // https://github.com/undertow-io/undertow/blob/master/core/src/main/java/io/undertow/websockets/core/WebSockets.java#L557
++                            // sendPingBlocking => sendBlockingInternal
++                            session.getBasicRemote().sendPing(ByteBuffer.wrap("$".getBytes()));
 +                        } else {
++                            // https://github.com/undertow-io/undertow/blob/master/websockets-jsr/src/main/java/io/undertow/websockets/jsr/WebSocketSessionRemoteEndpoint.java#L253
++                            // sendText => WebSockets.sendTextBlocking
++                            // https://github.com/undertow-io/undertow/blob/master/core/src/main/java/io/undertow/websockets/core/WebSockets.java#L198
++                            // sendTextBlocking => sendBlockingInternal
 +                            session.getBasicRemote().sendText(msg);
 +                        }
 +                    }
@@ -439,6 +481,7 @@ index 0000000..6eb6014
 +                        System.out.println("JSON close socket command received ? " + message);
 +                        session.close();
 +                    }
++                    Assert.ok(session.isOpen(), "Dead session can't handle message");
 +                } catch (Exception e) {
 +                    e.printStackTrace();
 +                    Assert.fail("onMessage");
@@ -522,10 +565,10 @@ index 0000000..5bbe995
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/Enc28J60.java b/se/sics/mspsim/platform/proiot3/Enc28J60.java
 new file mode 100644
-index 0000000..cfa17d3
+index 0000000..7c30441
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Enc28J60.java
-@@ -0,0 +1,345 @@
+@@ -0,0 +1,363 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import java.util.concurrent.ConcurrentLinkedDeque;
@@ -537,6 +580,8 @@ index 0000000..cfa17d3
 +import se.sics.mspsim.core.USARTListener;
 +import se.sics.mspsim.core.USARTSource;
 +import se.sics.mspsim.platform.GenericNode;
++
++import com.sun.jna.LastErrorException;
 +
 +// previous: https://gist.github.com/e89c9f685988660ceb6114e3b7f2d6f0
 +
@@ -704,13 +749,12 @@ index 0000000..cfa17d3
 +        }
 +      }
 +    };
-+    TunTap.getInstance().addObserver(tapObserver);
 +  }
 +
 +  @Override
 +  public void log(String msg) {
 +    if (DEBUG) {
-+      System.out.println("Enc28J60: " + msg);
++      System.out.println("Enc28J60: [" + Integer.toHexString(System.identityHashCode(this)) + "] " + msg);
 +    }
 +  }
 +
@@ -866,8 +910,25 @@ index 0000000..cfa17d3
 +    // log("Enc28J60 spiIn: 0x" + Integer.toHexString(spiIn) + ", spiOut 0x" + Integer.toHexString(spiOut));
 +  }
 +
-+  public void close() {
++  public void plugEth() {
++    TunTap.getInstance().addObserver(tapObserver);
++  }
++
++  public void unplugEth() {
 +    TunTap.getInstance().removeObserver(tapObserver);
++  }
++
++  public static boolean hasEth() {
++    try {
++      TunTap.getInstance();
++      return true;
++    } catch (LastErrorException ex) {
++      System.out.println("Enc28J60 disabled -> " + ex);
++      return false;
++    } catch (Exception ex) {
++      ex.printStackTrace();
++      return false;
++    }
 +  }
 +
 +}
@@ -919,10 +980,10 @@ index 0000000..2bdc619
 \ No newline at end of file
 diff --git a/se/sics/mspsim/platform/proiot3/Proiot3Node.java b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
 new file mode 100644
-index 0000000..fdd100f
+index 0000000..659334c
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Proiot3Node.java
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,293 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import se.sics.mspsim.core.MSP430Constants;
@@ -943,8 +1004,6 @@ index 0000000..fdd100f
 +import java.awt.GraphicsEnvironment;
 +
 +import org.json.simple.JSONObject;
-+
-+import com.sun.jna.LastErrorException;
 +
 +
 +public class Proiot3Node extends GenericNode implements IProiotNode {
@@ -981,12 +1040,8 @@ index 0000000..fdd100f
 +  public Proiot3Node() {
 +    super("ProiotNode", new MSP430f1611Config());
 +
-+    try {
++    if (Enc28J60.hasEth()) {
 +      enc28J60 = new Enc28J60(cpu, this);
-+    } catch (LastErrorException ex) {
-+      System.out.println("Enc28J60 disabled -> " + ex);
-+    } catch (Exception ex) {
-+      ex.printStackTrace();
 +    }
 +
 +    setupNode();
@@ -994,11 +1049,19 @@ index 0000000..fdd100f
 +    cpu.addSimEventListener(new SimEventListener() {
 +
 +        private SerialMon serialMon;
++        // The methods notify() and notifyAll() do not save the method calls 
++        // to them in case no threads are waiting when they are called. 
++        // The notify signal is then just lost.
++        private boolean wasSignalled;
 +
 +        @Override
 +        public void simChanged(SimEvent event) {
 +          switch (event.getType()) {
 +            case START:
++              if (enc28J60 != null) {
++                enc28J60.plugEth();
++              }
++
 +              if (hasSerialMon) {
 +                final Object mutex = new Object();
 +                java.awt.EventQueue.invokeLater(new Runnable() {
@@ -1012,6 +1075,7 @@ index 0000000..fdd100f
 +                    serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
 +                    serialMon.start();
 +                    synchronized(mutex) {
++                      wasSignalled = true;
 +                      mutex.notify();
 +                    }
 +                  }
@@ -1021,10 +1085,12 @@ index 0000000..fdd100f
 +                // to reproduce just add Thread.sleep() before serialMon.start()
 +                // and remove mutex. code
 +                synchronized(mutex) {
-+                  try {
-+                    mutex.wait();
-+                  } catch (InterruptedException ex) {
-+                    ex.printStackTrace();
++                  if(!wasSignalled) {
++                    try {
++                      mutex.wait();
++                    } catch (InterruptedException ex) {
++                      ex.printStackTrace();
++                    }
 +                  }
 +                }
 +              }
@@ -1043,7 +1109,7 @@ index 0000000..fdd100f
 +              }
 +
 +              if (enc28J60 != null) {
-+                enc28J60.close();
++                enc28J60.unplugEth();
 +              }
 +
 +              emulink.simulationStopped();
@@ -1213,10 +1279,10 @@ index 0000000..fdd100f
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/TunTap.java b/se/sics/mspsim/platform/proiot3/TunTap.java
 new file mode 100644
-index 0000000..6ddaa50
+index 0000000..31a4861
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/TunTap.java
-@@ -0,0 +1,430 @@
+@@ -0,0 +1,443 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import com.sun.jna.Platform;
@@ -1555,6 +1621,19 @@ index 0000000..6ddaa50
 +
 +            @Override
 +            public int read(byte[] buffer) {
++              int n;
++              do {
++                n = readImpl(buffer);
++                if (n == 0) {
++                  System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
++                  System.out.println("!!!!!! Windows tap read 0 workaround !!!!!!");
++                  System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
++                }
++              } while(n == 0);
++              return n;
++            }
++
++            private int readImpl(byte[] buffer) {
 +
 +                Memory readBuffer = new Memory(buffer.length);
 +
@@ -1674,10 +1753,10 @@ index 0000000..8d31a57
 +}
 diff --git a/se/sics/mspsim/platform/proiot4/Proiot4Node.java b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
 new file mode 100644
-index 0000000..f789afa
+index 0000000..9bdd555
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot4/Proiot4Node.java
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,197 @@
 +package se.sics.mspsim.platform.proiot4;
 +
 +import se.sics.mspsim.core.MSP430Constants;
@@ -1725,6 +1804,10 @@ index 0000000..f789afa
 +    cpu.addSimEventListener(new SimEventListener() {
 +
 +        private SerialMon serialMon;
++        // The methods notify() and notifyAll() do not save the method calls 
++        // to them in case no threads are waiting when they are called. 
++        // The notify signal is then just lost.
++        private boolean wasSignalled;
 +
 +        @Override
 +        public void simChanged(SimEvent event) {
@@ -1743,6 +1826,7 @@ index 0000000..f789afa
 +                    serialMon = new SerialMon(usart, "USART0 I/O P3(4,5)");
 +                    serialMon.start();
 +                    synchronized(mutex) {
++                      wasSignalled = true;
 +                      mutex.notify();
 +                    }
 +                  }
@@ -1752,10 +1836,12 @@ index 0000000..f789afa
 +                // to reproduce just add Thread.sleep() before serialMon.start()
 +                // and remove mutex. code
 +                synchronized(mutex) {
-+                  try {
-+                    mutex.wait();
-+                  } catch (InterruptedException ex) {
-+                    ex.printStackTrace();
++                  if(!wasSignalled) {
++                    try {
++                      mutex.wait();
++                    } catch (InterruptedException ex) {
++                      ex.printStackTrace();
++                    }
 +                  }
 +                }
 +              }
