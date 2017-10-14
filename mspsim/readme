@@ -3,6 +3,7 @@
 2) Options:
     - Remove -Djava.awt.headless=true to enable UART UI
     - Play with -Xmx256m to avoid OutOfMemoryError if machine is low on memory (RAM < 1g)
+    - Add -XX:-OmitStackTraceInFastThrow for better loging
 
 3) Very basic examples for 1) or 2):
     - about: http://localhost:9148/help.html
@@ -106,7 +107,7 @@
         # sudo radvdump
 
       - Windows:
-        # TODO: 4) c) didn't work for me, but You can become a hero and fix it !
+        # TODO: 4) c) didn't work out for me, but You can become a hero and fix this !
 
     d) ENC28J60 examples for 1) or 2):
 

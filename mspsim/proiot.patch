@@ -565,10 +565,10 @@ index 0000000..5bbe995
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/Enc28J60.java b/se/sics/mspsim/platform/proiot3/Enc28J60.java
 new file mode 100644
-index 0000000..7c30441
+index 0000000..5196dd2
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Enc28J60.java
-@@ -0,0 +1,363 @@
+@@ -0,0 +1,370 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import java.util.concurrent.ConcurrentLinkedDeque;
@@ -803,6 +803,13 @@ index 0000000..7c30441
 +          Assert.fail("Tap write error");
 +        }
 +
++        // Ethernet hub. As a multiport repeater it works by repeating bits  
++        // (symbols) received from one of its ports to all other ports.
++        // TODO: Network_switch seems also possible, but requires much 
++        // refactoring here to parse and filter MAC address of Ethernet 
++        // packets manually...
++        TunTap.getInstance().notifyObserversOtherThan(bytes, tapObserver);
++
 +        wbmData.clear();
 +      } else {
 +        log("warning: nothing to transmit");
@@ -934,10 +941,10 @@ index 0000000..7c30441
 +}
 diff --git a/se/sics/mspsim/platform/proiot3/Observable.java b/se/sics/mspsim/platform/proiot3/Observable.java
 new file mode 100644
-index 0000000..2bdc619
+index 0000000..bb68999
 --- /dev/null
 +++ b/se/sics/mspsim/platform/proiot3/Observable.java
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,51 @@
 +package se.sics.mspsim.platform.proiot3;
 +
 +import java.util.concurrent.CopyOnWriteArrayList;
@@ -969,6 +976,18 @@ index 0000000..2bdc619
 +            throw new IllegalArgumentException("No such Observer");
 +        }
 +        _observers.remove(obs);
++    }
++
++    public void notifyObserversOtherThan(ObservedType data, Observer<ObservedType> ignore) {
++        if (ignore == null) {
++            throw new IllegalArgumentException("Observer can't be null");
++        }
++
++        for (Observer<ObservedType> obs : _observers) {
++            if (ignore != obs) {
++                obs.update(data);
++            }
++        }
 +    }
 +
 +    protected void notifyObservers(ObservedType data) {
