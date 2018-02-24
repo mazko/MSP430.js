@@ -3,7 +3,7 @@
 ~$ . ~/virtualenvs/ng2/bin/activate
 (env)~$ npm install -g @angular/cli
 (env)~$ ng new ng2 && cd ng2
-(env)~$ npm install ngx-bootstrap bootstrap --save
+(env)~$ npm install ngx-bootstrap bootstrap@3 --save
 (env)~$ ng serve
 (env)~$ ng lint && ng build --prod && cp src/404.html ./dist/
 

@@ -1,9 +1,9 @@
 import { BrowserModule } from '@angular/platform-browser';
 import { NgModule } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HttpModule } from '@angular/http';
+import { HttpClientModule } from '@angular/common/http';
 import { RouterModule, Routes } from '@angular/router';
-import { Ng2BootstrapModule } from 'ngx-bootstrap';
+import { AlertModule, BsDropdownModule, ButtonsModule } from 'ngx-bootstrap';
 
 import { SimEmscriptenService } from './sim/services/sim-emscripten.service';
 import { GistService } from './sim/services/gist.service';
@@ -39,10 +39,12 @@ const routes: Routes = [
     Board4Component
   ],
   imports: [
-    Ng2BootstrapModule.forRoot(),
+    AlertModule.forRoot(),
+    BsDropdownModule.forRoot(),
+    ButtonsModule.forRoot(),
     BrowserModule,
     FormsModule,
-    HttpModule,
+    HttpClientModule,
     RouterModule.forRoot(routes)
   ],
   providers: [SimEmscriptenService, GistService],

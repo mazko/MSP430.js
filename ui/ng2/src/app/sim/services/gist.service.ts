@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Http, Response } from '@angular/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import 'rxjs/add/operator/toPromise';
 
 // curl -I http://api.github.com/users/mazko  -> 301
@@ -14,13 +14,13 @@ interface IGistModel {
 @Injectable()
 export class GistService {
 
-  constructor(private _http: Http) { }
+  constructor(private _http: HttpClient) { }
 
   fetch(id: string): Promise<IGistModel> {
     return this._http
-      .get(GISTS_URL + '/' + id)
+      .get<any>(GISTS_URL + '/' + id)
       .toPromise()
-      .then(r => r.json().files)
+      .then(r => r.files)
       .then((files): IGistModel => ({
         elf: atob(files.program.content),
         boardId: files.boardId.content
@@ -28,16 +28,21 @@ export class GistService {
   }
 
   create(model: IGistModel): Promise<{id: number, url: string}> {
+    const httpOptions = {
+      headers: new HttpHeaders({
+        'Authorization': 'Basic bWF6a29ib3Q6YmE5Yjc3YzQyYjZhNDhhMjM1YTE5NDk5NWFiNWQ4NzAyNmY0NmJjYw==',
+      })
+    };
+
     return this._http
-      .post(GISTS_URL, {
+      .post<any>(GISTS_URL, {
         description: 'msp430.js',
         files: {
           program: {content: btoa(model.elf)},
           boardId: {content: `${model.boardId}`},
         }
-      })
+      }, httpOptions)
       .toPromise()
-      .then(r => r.json())
       .then(({id, html_url}) => ({id, url: html_url}));
   }
 

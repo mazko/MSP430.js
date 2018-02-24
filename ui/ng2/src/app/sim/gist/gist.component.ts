@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Params, Router } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { GistService } from '../services/gist.service';
 import { ControllerService } from '../services/controller.service';
 import { StateService } from '../services/state.service';
@@ -38,7 +39,10 @@ export class GistComponent implements OnInit {
             this._controller.errorOccured(err);
           }
         },
-        err => this._controller.errorOccured(err)
+        (err: HttpErrorResponse) => {
+          console.log(err);
+          this._controller.errorOccured(new Error(`Can't fetch gist, http error! ${err.statusText}`));
+        }
       );
   }
 

@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { GistService } from './services/gist.service';
 import { ControllerService } from './services/controller.service';
 import { StateService } from './services/state.service';
@@ -62,7 +63,7 @@ export class SimComponent {
             <a href='${window.location.protocol}//${window.location.host}/${id}'>me</a>`,
           type: 'success', html: true});
       })
-      .catch(e => {
+      .catch((e: HttpErrorResponse) => {
         console.log(e);
         this.alerts.push({msg: `Can't create gist, http error! ${e.statusText}`, type: 'danger'});
       });
